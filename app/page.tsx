@@ -7,6 +7,7 @@ import {
   TopExpensesChart,
   TrendsChart,
 } from "@/components/dashboard/CostCharts";
+import CostSummaryTable from "@/components/dashboard/CostSummaryTable";
 import DataGrid from "@/components/dashboard/DataGrid";
 import Header from "@/components/dashboard/Header";
 import MetricCard from "@/components/dashboard/MetricCard";
@@ -134,6 +135,10 @@ function DashboardContent() {
 
           </div>
         )}
+
+        <div className="my-8">
+          <CostSummaryTable data={data || []} />
+        </div>
 
         {/* Data Grid Section - Global View (Could be filtered?) 
             User didn't explicitly say DataGrid needs filters, but it usually follows. 
