@@ -66,21 +66,21 @@ export default function ChartCard({ title, description, data, className, childre
                         selected={selectedProjects}
                         onChange={setSelectedProjects}
                         placeholder="Project"
-                        className="w-[140px]"
+                        className="w-[100px]"
                     />
                     <MultiSelect
                         options={yearOptions}
                         selected={selectedYears}
                         onChange={setSelectedYears}
                         placeholder="Year"
-                        className="w-[120px]"
+                        className="w-[80px]"
                     />
                     <MultiSelect
                         options={sourceOptions}
                         selected={selectedSources}
                         onChange={setSelectedSources}
                         placeholder="Source"
-                        className="w-[120px]"
+                        className="w-[80px]"
                     />
                     {enableCategoryFilter && (
                         <MultiSelect
