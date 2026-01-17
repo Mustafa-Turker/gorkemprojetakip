@@ -203,35 +203,6 @@ export default function CostSummaryTable({ data }: CostSummaryTableProps) {
                         })}
 
                         {/* Totals Section */}
-                        <tr>
-                            <td className="border-l border-r border-black border-b border-t-2 px-2 py-1 text-center font-bold bg-[#fff7d4] dark:bg-yellow-950/30 align-middle" rowSpan={2}>
-                                TOTALS
-                            </td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-center font-medium bg-[#fff7d4] dark:bg-yellow-950/30">ANK</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.material)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.workers)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.subcontractor)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.unclassified)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.common)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.general)}</td>
-                            <td className="border border-black border-t-2 px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.ANK.total)}</td>
-                            <td className="border border-black border-b border-t-2 px-1 py-1 text-center font-bold bg-[#fff7d4] dark:bg-yellow-950/30 align-middle" rowSpan={2}>
-                                {/* Sum of all Project Totals (which is basically Grand Total TOT.total) */}
-                                {fmt(grandTotals.ProjectSum)}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="border border-black border-b px-1 py-1 text-center font-medium bg-[#fff7d4] dark:bg-yellow-950/30">BAG</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.material)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.workers)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.subcontractor)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.unclassified)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.common)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.general)}</td>
-                            <td className="border border-black border-b px-1 py-1 text-right font-bold bg-[#fff7d4] dark:bg-yellow-950/30">{fmt(grandTotals.BAG.total)}</td>
-                        </tr>
-
-                        {/* Grand Total Row */}
                         <tr className="border-t-2 border-black">
                             <td className="border-l border-r border-black px-2 py-1 text-center font-bold bg-[#fff7d4] dark:bg-yellow-950/30 align-middle" rowSpan={2}>
                                 TOTALS
