@@ -37,14 +37,15 @@ const COLORS = [
 
 const CustomTooltip = ({ active, payload, label, maxItems }: any) => {
     if (active && payload && payload.length) {
-        // Filter out zero values for cleaner tooltip
+        // Filter out zero values and internal 'total' key
         const activeItems = payload
-            .filter((entry: any) => Number(entry.value) > 0)
+            .filter((entry: any) => Number(entry.value) > 0 && entry.dataKey !== 'total')
             .sort((a: any, b: any) => b.value - a.value);
 
         if (activeItems.length === 0) return null;
 
-        const total = payload.reduce((sum: number, entry: any) => sum + Number(entry.value), 0);
+        // Calculate total only from valid categories
+        const total = activeItems.reduce((sum: number, entry: any) => sum + Number(entry.value), 0);
 
         // Slice if maxItems is present
         const displayItems = maxItems ? activeItems.slice(0, maxItems) : activeItems;
