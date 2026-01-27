@@ -8,11 +8,10 @@ export async function GET(request) {
         const project = searchParams.get('project');
         const source = searchParams.get('source');
 
-        // Note: User requested all data to be positive.
-        // We will handle this in the SELECT or post-processing.
-        // SQL way: ABS(toplam_tutar)
+        // Note: User requested values to be inverted (negative becomes positive, positive becomes negative).
+        // This fixes sum calculation issues that occurred with ABS().
 
-        let sql = 'SELECT rapor_yili, proje_kodu, source, kategori_lvl_1, kategori_lvl_2, ABS(toplam_tutar) as toplam_tutar FROM public.view_proje_maliyet_ozeti WHERE 1=1';
+        let sql = 'SELECT rapor_yili, proje_kodu, source, kategori_lvl_1, kategori_lvl_2, (-1 * toplam_tutar) as toplam_tutar FROM public.view_proje_maliyet_ozeti WHERE 1=1';
         const params = [];
 
         // Note: We are fetching all data mostly as requested, but adding optional filtering logic here.
