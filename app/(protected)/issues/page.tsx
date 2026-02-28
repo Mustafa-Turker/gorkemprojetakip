@@ -18,6 +18,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { CompactMultiSelect } from "@/components/ui/compact-multi-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,8 @@ import {
     ChevronDown,
     ChevronUp,
     Download,
+    FilterX,
+    Eye,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -71,6 +74,14 @@ interface CheckStats {
     found: number;
     missing: number;
     perScope: ScopeStats[];
+}
+
+interface FileMetadata {
+    id: string;
+    createdDateTime: string;
+    lastModifiedDateTime: string;
+    createdBy: string | null;
+    size: number;
 }
 
 const translations = {
@@ -155,6 +166,14 @@ const translations = {
         noCheckYet: "Check will run automatically after loading data",
         filtered: "Filtered",
         noData: "Select year and month, then press Bring Data",
+        clearFilters: "Clear Filters",
+        fileDetails: "File Details",
+        created: "Created",
+        modified: "Modified",
+        uploadedBy: "Uploaded By",
+        fileSize: "File Size",
+        noPreview: "No preview available",
+        openInSharePoint: "Open in SharePoint",
     },
     tr: {
         title: "Belge Yonetimi",
@@ -237,6 +256,14 @@ const translations = {
         noCheckYet: "Veri yuklendikten sonra kontrol otomatik calisacak",
         filtered: "Filtrelenmis",
         noData: "Yil ve ay secin, ardindan Veri Getir'e basin",
+        clearFilters: "Filtreleri Temizle",
+        fileDetails: "Dosya Detaylari",
+        created: "Olusturulma",
+        modified: "Degistirilme",
+        uploadedBy: "Yukleyen",
+        fileSize: "Dosya Boyutu",
+        noPreview: "Onizleme mevcut degil",
+        openInSharePoint: "SharePoint'te Ac",
     },
 } as const;
 
@@ -253,14 +280,14 @@ export default function IssuesPage() {
     const [year, setYear] = useState("2024");
     const [monthFilter, setMonthFilter] = useState("all");
 
-    // Table-level filters
-    const [tableSourceFilter, setTableSourceFilter] = useState("all");
-    const [tableProjectFilter, setTableProjectFilter] = useState("all");
-    const [tablePartnerFilter, setTablePartnerFilter] = useState("all");
-    const [statusFilter, setStatusFilter] = useState<"all" | "missing" | "uploaded">("all");
+    // Table-level filters (arrays = multi-select, empty = all)
+    const [tableSourceFilter, setTableSourceFilter] = useState<string[]>([]);
+    const [tableProjectFilter, setTableProjectFilter] = useState<string[]>([]);
+    const [tablePartnerFilter, setTablePartnerFilter] = useState<string[]>([]);
+    const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [amountFilter, setAmountFilter] = useState<"all" | "above10k" | "5k-10k" | "below5k">("all");
-    const [transTypeFilter, setTransTypeFilter] = useState("all");
-    const [costFilter, setCostFilter] = useState<"all" | "positive" | "zeroOrNeg">("all");
+    const [transTypeFilter, setTransTypeFilter] = useState<string[]>([]);
+    const [costFilter, setCostFilter] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -288,6 +315,14 @@ export default function IssuesPage() {
     // Card-level cost filter
     const [cardCostOnly, setCardCostOnly] = useState(false);
 
+    // File metadata from SharePoint check
+    const [fileMetadata, setFileMetadata] = useState<Record<string, FileMetadata>>({});
+
+    // View file details dialog
+    const [viewRecord, setViewRecord] = useState<DocumentRecord | null>(null);
+    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+    const [thumbnailLoading, setThumbnailLoading] = useState(false);
+
     // Activity log
     const [activityLogOpen, setActivityLogOpen] = useState(false);
 
@@ -313,15 +348,16 @@ export default function IssuesPage() {
         setError(null);
         // Reset everything
         setFileStatuses({});
+        setFileMetadata({});
         setCheckedAll(false);
         setCheckStats(null);
-        setTableSourceFilter("all");
-        setTableProjectFilter("all");
-        setTablePartnerFilter("all");
-        setStatusFilter("all");
+        setTableSourceFilter([]);
+        setTableProjectFilter([]);
+        setTablePartnerFilter([]);
+        setStatusFilter([]);
         setAmountFilter("all");
-        setTransTypeFilter("all");
-        setCostFilter("all");
+        setTransTypeFilter([]);
+        setCostFilter([]);
         setSearchQuery("");
         setDateFrom("");
         setDateTo("");
@@ -355,6 +391,7 @@ export default function IssuesPage() {
         const totalBatches = Math.ceil(docUrls.length / BATCH_SIZE);
         let mergedStats: CheckStats | null = null;
         const allResults: Record<string, boolean> = {};
+        const allMetadata: Record<string, FileMetadata> = {};
 
         try {
             for (let i = 0; i < docUrls.length; i += BATCH_SIZE) {
@@ -379,10 +416,11 @@ export default function IssuesPage() {
                     break;
                 }
 
-                const { results, stats } = await checkResp.json();
+                const { results, metadata, stats } = await checkResp.json();
 
-                // Accumulate results locally — don't update state yet
+                // Accumulate results and metadata locally — don't update state yet
                 Object.assign(allResults, results);
+                if (metadata) Object.assign(allMetadata, metadata);
 
                 // Merge stats
                 if (!mergedStats) {
@@ -400,6 +438,7 @@ export default function IssuesPage() {
             }
             // Push all results to state at once after all batches complete
             setFileStatuses(prev => ({ ...prev, ...allResults }));
+            setFileMetadata(prev => ({ ...prev, ...allMetadata }));
             if (mergedStats) setCheckStats(mergedStats);
         } catch (checkErr) {
             console.error("Check error:", checkErr);
@@ -407,6 +446,7 @@ export default function IssuesPage() {
             // Still push whatever we collected so far
             if (Object.keys(allResults).length > 0) {
                 setFileStatuses(prev => ({ ...prev, ...allResults }));
+                setFileMetadata(prev => ({ ...prev, ...allMetadata }));
             }
         } finally {
             setCheckedAll(true);
@@ -438,29 +478,31 @@ export default function IssuesPage() {
         if (!records) return [];
         let filtered = records;
 
-        // Source filter
-        if (tableSourceFilter !== "all") {
-            filtered = filtered.filter((r) => r.source === tableSourceFilter);
+        // Source filter (multi-select)
+        if (tableSourceFilter.length > 0) {
+            filtered = filtered.filter((r) => tableSourceFilter.includes(r.source));
         }
 
-        // Project filter
-        if (tableProjectFilter !== "all") {
-            filtered = filtered.filter((r) => r.projekodu === tableProjectFilter);
+        // Project filter (multi-select)
+        if (tableProjectFilter.length > 0) {
+            filtered = filtered.filter((r) => tableProjectFilter.includes(r.projekodu));
         }
 
-        // Partner filter
-        if (tablePartnerFilter !== "all") {
-            const pv = tablePartnerFilter === "__blank" ? "" : tablePartnerFilter;
-            filtered = filtered.filter((r) => (r.partner || "") === pv);
+        // Partner filter (multi-select, "__blank" sentinel for empty)
+        if (tablePartnerFilter.length > 0) {
+            filtered = filtered.filter((r) => {
+                const pv = r.partner || "__blank";
+                return tablePartnerFilter.includes(pv);
+            });
         }
 
-        // Status filter
-        if (statusFilter !== "all") {
+        // Status filter (multi-select)
+        if (statusFilter.length > 0) {
             filtered = filtered.filter((r) => {
                 const exists = fileStatuses[r.doc];
-                if (statusFilter === "missing") return exists === false;
-                if (statusFilter === "uploaded") return exists === true;
-                return true;
+                if (statusFilter.includes("missing") && exists === false) return true;
+                if (statusFilter.includes("uploaded") && exists === true) return true;
+                return false;
             });
         }
 
@@ -475,19 +517,21 @@ export default function IssuesPage() {
             });
         }
 
-        // Transaction type filter
-        if (transTypeFilter !== "all") {
-            const tv = transTypeFilter === "__blank" ? "" : transTypeFilter;
-            filtered = filtered.filter((r) => (r.islemturu || "") === tv);
+        // Transaction type filter (multi-select, "__blank" sentinel for empty)
+        if (transTypeFilter.length > 0) {
+            filtered = filtered.filter((r) => {
+                const tv = r.islemturu || "__blank";
+                return transTypeFilter.includes(tv);
+            });
         }
 
-        // Cost filter
-        if (costFilter !== "all") {
+        // Cost filter (multi-select)
+        if (costFilter.length > 0) {
             filtered = filtered.filter((r) => {
                 const c = Number(r.cost) || 0;
-                if (costFilter === "positive") return c > 0;
-                if (costFilter === "zeroOrNeg") return c <= 0;
-                return true;
+                if (costFilter.includes("positive") && c > 0) return true;
+                if (costFilter.includes("zeroOrNeg") && c <= 0) return true;
+                return false;
             });
         }
 
@@ -632,7 +676,43 @@ export default function IssuesPage() {
         }
     };
 
-    const hasTableFilters = tableSourceFilter !== "all" || tableProjectFilter !== "all" || tablePartnerFilter !== "all" || statusFilter !== "all" || amountFilter !== "all" || transTypeFilter !== "all" || costFilter !== "all" || dateFrom || dateTo || searchQuery.trim();
+    const hasTableFilters = tableSourceFilter.length > 0 || tableProjectFilter.length > 0 || tablePartnerFilter.length > 0 || statusFilter.length > 0 || amountFilter !== "all" || transTypeFilter.length > 0 || costFilter.length > 0 || dateFrom || dateTo || searchQuery.trim();
+
+    // Clear all table-level filters
+    const clearAllFilters = useCallback(() => {
+        setTableSourceFilter([]);
+        setTableProjectFilter([]);
+        setTablePartnerFilter([]);
+        setStatusFilter([]);
+        setAmountFilter("all");
+        setTransTypeFilter([]);
+        setCostFilter([]);
+        setSearchQuery("");
+        setDateFrom("");
+        setDateTo("");
+        setPage(0);
+    }, []);
+
+    // Handle view file details
+    const handleViewFile = useCallback(async (record: DocumentRecord) => {
+        setViewRecord(record);
+        setThumbnailUrl(null);
+        setThumbnailLoading(true);
+
+        const meta = fileMetadata[record.doc];
+        if (meta?.id) {
+            try {
+                const resp = await fetch(`/api/documents/thumbnail?itemId=${encodeURIComponent(meta.id)}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    setThumbnailUrl(data.large || data.medium || data.small || null);
+                }
+            } catch {
+                // Silently fail — thumbnail is optional
+            }
+        }
+        setThumbnailLoading(false);
+    }, [fileMetadata]);
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -903,76 +983,60 @@ export default function IssuesPage() {
                     >
                             {/* Filter row 1: dropdowns */}
                             <div className="flex flex-wrap gap-2">
-                                <Select value={tableSourceFilter} onValueChange={(v) => { setTableSourceFilter(v); setPage(0); }}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                        <SelectValue placeholder={t.source} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">{t.allSources}</SelectItem>
-                                        {sources.map((s) => (
-                                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <CompactMultiSelect
+                                    options={sources.map((s) => ({ label: s, value: s }))}
+                                    selected={tableSourceFilter}
+                                    onChange={(v) => { setTableSourceFilter(v); setPage(0); }}
+                                    placeholder={t.allSources}
+                                    className="w-[140px]"
+                                />
 
-                                <Select value={tableProjectFilter} onValueChange={(v) => { setTableProjectFilter(v); setPage(0); }}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                        <SelectValue placeholder={t.project} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">{t.allProjects}</SelectItem>
-                                        {projects.map((p) => (
-                                            <SelectItem key={p} value={p}>{p}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <CompactMultiSelect
+                                    options={projects.map((p) => ({ label: p, value: p }))}
+                                    selected={tableProjectFilter}
+                                    onChange={(v) => { setTableProjectFilter(v); setPage(0); }}
+                                    placeholder={t.allProjects}
+                                    className="w-[140px]"
+                                />
 
-                                <Select value={tablePartnerFilter} onValueChange={(v) => { setTablePartnerFilter(v); setPage(0); }}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                        <SelectValue placeholder={t.partner} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">{t.allPartners}</SelectItem>
-                                        {partners.map((p) => (
-                                            <SelectItem key={p || "__blank"} value={p || "__blank"}>{p || "—"}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <CompactMultiSelect
+                                    options={partners.map((p) => ({ label: p || "\u2014", value: p || "__blank" }))}
+                                    selected={tablePartnerFilter}
+                                    onChange={(v) => { setTablePartnerFilter(v); setPage(0); }}
+                                    placeholder={t.allPartners}
+                                    className="w-[140px]"
+                                />
 
-                                <Select value={transTypeFilter} onValueChange={(v) => { setTransTypeFilter(v); setPage(0); }}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                        <SelectValue placeholder={t.transType} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">{t.allTransTypes}</SelectItem>
-                                        {transTypes.map((tt) => (
-                                            <SelectItem key={tt || "__blank"} value={tt || "__blank"}>{tt || "—"}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <CompactMultiSelect
+                                    options={transTypes.map((tt) => ({ label: tt || "\u2014", value: tt || "__blank" }))}
+                                    selected={transTypeFilter}
+                                    onChange={(v) => { setTransTypeFilter(v); setPage(0); }}
+                                    placeholder={t.allTransTypes}
+                                    className="w-[140px]"
+                                />
 
-                                <Select value={costFilter} onValueChange={(v) => { setCostFilter(v as typeof costFilter); setPage(0); }}>
-                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                        <SelectValue placeholder={t.cost} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">{t.allCosts}</SelectItem>
-                                        <SelectItem value="positive">{t.costPositive}</SelectItem>
-                                        <SelectItem value="zeroOrNeg">{t.costZeroOrNeg}</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <CompactMultiSelect
+                                    options={[
+                                        { label: t.costPositive, value: "positive" },
+                                        { label: t.costZeroOrNeg, value: "zeroOrNeg" },
+                                    ]}
+                                    selected={costFilter}
+                                    onChange={(v) => { setCostFilter(v); setPage(0); }}
+                                    placeholder={t.allCosts}
+                                    className="w-[140px]"
+                                />
 
                                 {checkedAll && (
-                                    <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setPage(0); }}>
-                                        <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
-                                            <SelectValue placeholder={t.status} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">{t.allStatus}</SelectItem>
-                                            <SelectItem value="missing">{t.missing}</SelectItem>
-                                            <SelectItem value="uploaded">{t.uploaded}</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <CompactMultiSelect
+                                        options={[
+                                            { label: t.missing, value: "missing" },
+                                            { label: t.uploaded, value: "uploaded" },
+                                        ]}
+                                        selected={statusFilter}
+                                        onChange={(v) => { setStatusFilter(v); setPage(0); }}
+                                        placeholder={t.allStatus}
+                                        className="w-[140px]"
+                                    />
                                 )}
                             </div>
 
@@ -982,20 +1046,20 @@ export default function IssuesPage() {
                                     { key: "urgent1" as const, label: t.urgent1, amount: "above10k" as const },
                                     { key: "urgent2" as const, label: t.urgent2, amount: "5k-10k" as const },
                                 ].map(({ key, label, amount }) => {
-                                    const isActive = tablePartnerFilter === "GORKEM" && costFilter === "positive" && statusFilter === "missing" && amountFilter === amount;
+                                    const isActive = tablePartnerFilter.length === 1 && tablePartnerFilter[0] === "GORKEM" && costFilter.length === 1 && costFilter[0] === "positive" && statusFilter.length === 1 && statusFilter[0] === "missing" && amountFilter === amount;
                                     return (
                                         <button
                                             key={key}
                                             onClick={() => {
                                                 if (isActive) {
-                                                    setTablePartnerFilter("all");
-                                                    setCostFilter("all");
-                                                    setStatusFilter("all");
+                                                    setTablePartnerFilter([]);
+                                                    setCostFilter([]);
+                                                    setStatusFilter([]);
                                                     setAmountFilter("all");
                                                 } else {
-                                                    setTablePartnerFilter("GORKEM");
-                                                    setCostFilter("positive");
-                                                    setStatusFilter("missing");
+                                                    setTablePartnerFilter(["GORKEM"]);
+                                                    setCostFilter(["positive"]);
+                                                    setStatusFilter(["missing"]);
                                                     setAmountFilter(amount);
                                                 }
                                                 setPage(0);
@@ -1014,9 +1078,9 @@ export default function IssuesPage() {
 
                                 {checkedAll && (
                                     <button
-                                        onClick={() => { setStatusFilter(statusFilter === "missing" ? "all" : "missing"); setPage(0); }}
+                                        onClick={() => { setStatusFilter(statusFilter.length === 1 && statusFilter[0] === "missing" ? [] : ["missing"]); setPage(0); }}
                                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                                            statusFilter === "missing"
+                                            statusFilter.length === 1 && statusFilter[0] === "missing"
                                                 ? "bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300"
                                                 : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-rose-300 dark:hover:border-rose-700"
                                         }`}
@@ -1067,6 +1131,17 @@ export default function IssuesPage() {
 
                                 <div className="hidden sm:block w-px h-5 bg-zinc-200 dark:bg-zinc-700 mx-1" />
 
+                                {/* Clear filters button */}
+                                {hasTableFilters && (
+                                    <button
+                                        onClick={clearAllFilters}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <FilterX className="h-3 w-3" />
+                                        {t.clearFilters}
+                                    </button>
+                                )}
+
                                 {/* Filtered count */}
                                 {hasTableFilters && records && (
                                     <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
@@ -1088,7 +1163,7 @@ export default function IssuesPage() {
                     </div>
 
                     {/* Table card — rounded bottom only, connects to filter bar above */}
-                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-clip">
+                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead className="sticky z-10 bg-zinc-50 dark:bg-zinc-900/50" style={{ top: filterBarHeight + 64 }}>
                                     <tr
@@ -1164,15 +1239,25 @@ export default function IssuesPage() {
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <div className="flex items-center justify-center gap-1">
-                                                        <a
-                                                            href={record.doc}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
-                                                            title={t.viewDocument}
-                                                        >
-                                                            <ExternalLink className="h-3.5 w-3.5" />
-                                                        </a>
+                                                        {status === true && fileMetadata[record.doc]?.id ? (
+                                                            <button
+                                                                onClick={() => handleViewFile(record)}
+                                                                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
+                                                                title={t.fileDetails}
+                                                            >
+                                                                <Eye className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        ) : (
+                                                            <a
+                                                                href={record.doc}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
+                                                                title={t.viewDocument}
+                                                            >
+                                                                <ExternalLink className="h-3.5 w-3.5" />
+                                                            </a>
+                                                        )}
                                                         {status === false && (
                                                             <Button
                                                                 size="sm"
@@ -1191,7 +1276,7 @@ export default function IssuesPage() {
                                     })}
                                     {pagedRecords.length === 0 && (
                                         <tr>
-                                            <td colSpan={11} className="px-4 py-12 text-center text-zinc-400">
+                                            <td colSpan={13} className="px-4 py-12 text-center text-zinc-400">
                                                 {t.noRecords}
                                             </td>
                                         </tr>
@@ -1352,6 +1437,107 @@ export default function IssuesPage() {
                                     )}
                                 </Button>
                             )}
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* View File Details Dialog */}
+                <Dialog open={!!viewRecord} onOpenChange={(open) => { if (!open) { setViewRecord(null); setThumbnailUrl(null); } }}>
+                    <DialogContent className="sm:max-w-lg">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Eye className="h-5 w-5 text-indigo-500" />
+                                {t.fileDetails}
+                            </DialogTitle>
+                            <DialogDescription>
+                                <span className="font-mono font-semibold">{viewRecord?.uniquecode}</span>
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {viewRecord && (() => {
+                            const meta = fileMetadata[viewRecord.doc];
+                            return (
+                                <div className="space-y-4">
+                                    {/* Thumbnail */}
+                                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center min-h-[160px]">
+                                        {thumbnailLoading ? (
+                                            <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+                                        ) : thumbnailUrl ? (
+                                            <img src={thumbnailUrl} alt={getFilename(viewRecord.doc)} className="max-w-full max-h-[300px] object-contain" />
+                                        ) : (
+                                            <div className="text-center py-8 text-zinc-400">
+                                                <FileText className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                                                <p className="text-sm">{t.noPreview}</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* SharePoint metadata */}
+                                    {meta && (
+                                        <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.created}</span>
+                                                <p className="font-medium">{meta.createdDateTime ? new Date(meta.createdDateTime).toLocaleString() : "\u2014"}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.modified}</span>
+                                                <p className="font-medium">{meta.lastModifiedDateTime ? new Date(meta.lastModifiedDateTime).toLocaleString() : "\u2014"}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.uploadedBy}</span>
+                                                <p className="font-medium">{meta.createdBy || "\u2014"}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.fileSize}</span>
+                                                <p className="font-medium">{meta.size ? `${(meta.size / 1024).toFixed(1)} KB` : "\u2014"}</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Record data */}
+                                    <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.date}</span>
+                                            <p className="font-medium">{formatDate(viewRecord.date)}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.project}</span>
+                                            <p className="font-medium">{viewRecord.projekodu}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.source}</span>
+                                            <p className="font-medium">{viewRecord.source}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.amount}</span>
+                                            <p className="font-medium">{formatCurrency(Number(viewRecord.usd_degeri) || 0)}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.vendor}</span>
+                                            <p className="font-medium truncate">{viewRecord.carifirma || "\u2014"}</p>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.description}</span>
+                                            <p className="font-medium">{viewRecord.aciklama || "\u2014"}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        <DialogFooter>
+                            <a
+                                href={viewRecord?.doc}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white transition-colors"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                                {t.openInSharePoint}
+                            </a>
+                            <Button variant="outline" onClick={() => { setViewRecord(null); setThumbnailUrl(null); }}>
+                                {t.close}
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

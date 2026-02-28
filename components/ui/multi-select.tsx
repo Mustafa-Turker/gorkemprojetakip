@@ -98,7 +98,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
             </div>
             <div className="relative mt-2">
                 {open && selectables.length > 0 ? (
-                    <div className="absolute w-full z-10 top-0 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-popover-foreground shadow-md outline-none animate-in">
+                    <div className="absolute w-full z-50 top-0 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-popover-foreground shadow-md outline-none animate-in">
                         <CommandList>
                             <CommandGroup className="h-full overflow-auto max-h-60">
                                 {selectables.map((option) => (
