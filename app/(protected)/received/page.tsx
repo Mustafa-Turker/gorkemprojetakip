@@ -4,7 +4,7 @@ import { Clock } from "lucide-react";
 export default function ReceivedAmountsPage() {
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
-            <main className="p-6 max-w-[1600px] mx-auto">
+            <main className="p-4 md:p-6 max-w-[1600px] mx-auto">
                 <div className="flex items-center justify-center min-h-[60vh]">
                     <Card className="w-full max-w-md text-center border-none shadow-xl bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950">
                         <CardHeader className="pb-4">

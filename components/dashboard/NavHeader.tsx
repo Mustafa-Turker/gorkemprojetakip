@@ -91,7 +91,7 @@ export default function NavHeader() {
             {/* Premium light background with subtle shadow */}
             <div className="absolute inset-0 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-b border-zinc-200/80 dark:border-zinc-800/80 shadow-sm" />
 
-            <nav className="relative max-w-[1600px] mx-auto px-6">
+            <nav className="relative max-w-[1600px] mx-auto px-4 md:px-6">
                 <div className="flex items-center justify-between h-16">
                     {/* Logo / Brand - Premium styling */}
                     <div className="flex items-center gap-10">

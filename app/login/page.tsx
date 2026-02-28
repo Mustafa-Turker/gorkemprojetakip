@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2, Lock, User } from "lucide-react";
 
 export default function LoginPage() {
@@ -9,7 +8,6 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,9 +24,7 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (data.success) {
-                router.refresh(); // Refresh to update middleware state
-                // Use window location for hard redirect to ensure middleware re-runs
-                window.location.href = "/";
+                window.location.replace("/");
             } else {
                 setError(data.error || "Login failed");
                 setIsLoading(false);
