@@ -139,7 +139,7 @@ const translations = {
         errorLoadFailed: "Failed to load documents data.",
         dateFrom: "From",
         dateTo: "To",
-        noCheckYet: "Press Bring Data to fetch and check",
+        noCheckYet: "Check will run automatically after loading data",
         filtered: "Filtered",
         noData: "Select year and month, then press Bring Data",
     },
@@ -210,7 +210,7 @@ const translations = {
         errorLoadFailed: "Belge verileri yuklenemedi.",
         dateFrom: "Baslangic",
         dateTo: "Bitis",
-        noCheckYet: "Veri getirmek icin Veri Getir'e basin",
+        noCheckYet: "Veri yuklendikten sonra kontrol otomatik calisacak",
         filtered: "Filtrelenmis",
         noData: "Yil ve ay secin, ardindan Veri Getir'e basin",
     },
@@ -219,6 +219,7 @@ const translations = {
 type Lang = keyof typeof translations;
 
 const PAGE_SIZE = 50;
+const BATCH_SIZE = 10000;
 
 export default function IssuesPage() {
     const [lang, setLang] = useState<Lang>("en");
@@ -256,6 +257,7 @@ export default function IssuesPage() {
     const [checking, setChecking] = useState(false);
     const [checkedAll, setCheckedAll] = useState(false);
     const [checkStats, setCheckStats] = useState<CheckStats | null>(null);
+    const [checkProgress, setCheckProgress] = useState("");
 
     // Activity log
     const [activityLogOpen, setActivityLogOpen] = useState(false);
@@ -276,7 +278,7 @@ export default function IssuesPage() {
         }
     }, [records]);
 
-    // Bring Data: fetch + auto-check
+    // Bring Data: fetch records, auto-check SharePoint (batched)
     const bringData = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -304,38 +306,76 @@ export default function IssuesPage() {
             setRecords(data);
             setIsLoading(false);
 
-            // Auto-check SharePoint
+            // Auto-check SharePoint (batched to avoid Worker timeout)
             if (data.length > 0) {
-                setChecking(true);
-                try {
-                    const checkResp = await fetch("/api/documents/check", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ docUrls: data.map((r) => r.doc) }),
-                    });
-                    if (checkResp.ok) {
-                        const { results, stats } = await checkResp.json();
-                        setFileStatuses(results);
-                        setCheckStats(stats);
-                    } else {
-                        const errBody = await checkResp.text().catch(() => "");
-                        console.error("Check failed:", checkResp.status, errBody);
-                        setError(`SharePoint check failed (${checkResp.status})`);
-                    }
-                } catch (checkErr) {
-                    console.error("Check error:", checkErr);
-                    setError(`SharePoint check error: ${(checkErr as Error).message}`);
-                } finally {
-                    setCheckedAll(true);
-                    setChecking(false);
-                    setActivityLogOpen(true);
-                }
+                await runCheck(data.map((r) => r.doc));
             }
         } catch (err) {
             setError((err as Error).message);
             setIsLoading(false);
         }
     }, [year, monthFilter]);
+
+    // Check documents on SharePoint (batched in BATCH_SIZE chunks)
+    const runCheck = useCallback(async (docUrls: string[]) => {
+        setChecking(true);
+        setError(null);
+        const totalBatches = Math.ceil(docUrls.length / BATCH_SIZE);
+        let mergedStats: CheckStats | null = null;
+
+        try {
+            for (let i = 0; i < docUrls.length; i += BATCH_SIZE) {
+                const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+                const batch = docUrls.slice(i, i + BATCH_SIZE);
+                if (totalBatches > 1) {
+                    setCheckProgress(`(${batchNum}/${totalBatches})`);
+                } else {
+                    setCheckProgress("");
+                }
+
+                const checkResp = await fetch("/api/documents/check", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ docUrls: batch }),
+                });
+
+                if (!checkResp.ok) {
+                    const errBody = await checkResp.text().catch(() => "");
+                    console.error("Check failed:", checkResp.status, errBody);
+                    setError(`SharePoint check failed (${checkResp.status})`);
+                    break;
+                }
+
+                const { results, stats } = await checkResp.json();
+
+                // Update statuses progressively so user sees results appearing
+                setFileStatuses(prev => ({ ...prev, ...results }));
+
+                // Merge stats
+                if (!mergedStats) {
+                    mergedStats = stats;
+                } else {
+                    mergedStats.totalUrls += stats.totalUrls;
+                    mergedStats.unparseable += stats.unparseable;
+                    mergedStats.totalScopes += stats.totalScopes;
+                    mergedStats.totalApiCalls += stats.totalApiCalls;
+                    mergedStats.totalFilesFound += stats.totalFilesFound;
+                    mergedStats.found += stats.found;
+                    mergedStats.missing += stats.missing;
+                    mergedStats.perScope.push(...stats.perScope);
+                }
+            }
+            if (mergedStats) setCheckStats(mergedStats);
+        } catch (checkErr) {
+            console.error("Check error:", checkErr);
+            setError(`SharePoint check error: ${(checkErr as Error).message}`);
+        } finally {
+            setCheckedAll(true);
+            setChecking(false);
+            setCheckProgress("");
+            setActivityLogOpen(true);
+        }
+    }, []);
 
     // Context subtitle for summary cards
     const contextLabel = useMemo(() => {
@@ -599,7 +639,7 @@ export default function IssuesPage() {
                         ) : checking ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                {t.checking}
+                                {t.checking} {checkProgress}
                             </>
                         ) : (
                             <>
@@ -608,6 +648,13 @@ export default function IssuesPage() {
                             </>
                         )}
                     </Button>
+
+                    {checking && !isLoading && (
+                        <div className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {t.checking} {checkProgress}
+                        </div>
+                    )}
                 </div>
 
                 {/* Error */}
@@ -888,12 +935,11 @@ export default function IssuesPage() {
                     </div>
 
                     {/* Table card — rounded bottom only, connects to filter bar above */}
-                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-auto">
+                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-clip">
                             <table className="w-full text-sm">
-                                <thead>
+                                <thead className="sticky z-10 bg-zinc-50 dark:bg-zinc-900/50" style={{ top: filterBarHeight + 64 }}>
                                     <tr
-                                        className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50"
-                                        style={{ position: "sticky", top: filterBarHeight + 64, zIndex: 10 }}
+                                        className="border-b border-zinc-200 dark:border-zinc-800"
                                     >
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12">#</th>
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.date}</th>
