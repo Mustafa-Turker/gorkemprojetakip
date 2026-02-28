@@ -26,7 +26,7 @@ app/
 │   ├── received/page.tsx # Placeholder - "Coming Soon"
 │   ├── balances/page.tsx # Placeholder - "Coming Soon"
 │   ├── study/page.tsx    # Placeholder - "Coming Soon"
-│   ├── issues/page.tsx   # Placeholder - "Coming Soon"
+│   ├── issues/page.tsx   # Document management - SharePoint check/upload with filters
 │   ├── error.tsx         # Error boundary
 │   └── global-error.tsx  # Global error boundary
 ├── globals.css           # Tailwind config + CSS variables (light/dark)
@@ -34,7 +34,11 @@ app/
 │   ├── auth/
 │   │   ├── login/route.ts   # POST - cookie-based auth
 │   │   └── logout/route.ts  # POST - clears auth cookie
-│   └── costs/route.js       # GET - fetches from PostgreSQL view
+│   ├── costs/route.js       # GET - fetches from PostgreSQL view
+│   └── documents/
+│       ├── route.js         # GET - fetches document records from view_muhasebe_konsolide
+│       ├── check/route.js   # POST - checks document existence in SharePoint via Graph API
+│       └── upload/route.js  # POST - uploads PDF files to SharePoint
 components/
 ├── dashboard/
 │   ├── NavHeader.tsx         # Sticky nav with sliding pill indicator, mobile menu, logout
@@ -48,6 +52,7 @@ components/
 │   └── multi-select.tsx      # Custom multi-select component
 lib/
 ├── db.js                 # PostgreSQL per-request Client via Hyperdrive
+├── sharepoint.js         # SharePoint Graph API integration (auth, search, upload)
 ├── types.ts              # CostRecord, ChartDataPoint, YearlyDataPoint interfaces
 └── utils.ts              # cn() (tailwind-merge) + formatCurrency (USD)
 wrangler.jsonc            # Cloudflare Workers config + Hyperdrive binding
@@ -60,9 +65,10 @@ patches/
 
 - Connects to PostgreSQL via Cloudflare Hyperdrive (binding: `HYPERDRIVE`)
 - Per-request `Client` connection (Workers can't share I/O across requests)
-- Reads from view: `public.view_proje_maliyet_ozeti`
-- Schema columns: `rapor_yili`, `proje_kodu`, `source`, `kategori_lvl_1`, `kategori_lvl_2`, `toplam_tutar`
-- Values are inverted (`-1 * toplam_tutar`) in the API query to fix sign conventions
+- **Cost dashboard view**: `public.view_proje_maliyet_ozeti` — columns: `rapor_yili`, `proje_kodu`, `source`, `kategori_lvl_1`, `kategori_lvl_2`, `toplam_tutar`
+  - Values are inverted (`-1 * toplam_tutar`) in the API query to fix sign conventions
+- **Documents view**: `public.view_muhasebe_konsolide` — columns used: `uniquecode`, `doc`, `date`, `projekodu`, `source`, `carifirma`, `aciklama`, `usd_degeri`, `partner`
+  - `doc` column contains full SharePoint URLs for PDF documents
 
 ## Authentication
 
@@ -90,6 +96,24 @@ USERS={"username":"password"}
 ```
 
 For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hyperdrive handles the DB connection.
+
+## SharePoint Integration
+
+- **Auth**: Microsoft Graph API with client credentials flow (OAuth2)
+- **Drive**: "Documentation" library on `gorkem.sharepoint.com`
+- **Check flow**: `searchBasedCheck()` groups doc URLs by `basePath/year/month` scope, then searches each scope folder for `.pdf` files. Returns `{ results, stats }` with per-scope metadata and aggregate counts.
+- **Upload flow**: Simple PUT upload via Graph API (`< 4MB`), auto-creates folders
+- **Credentials**: `SP_TENANT_ID`, `SP_CLIENT_ID`, `SP_CLIENT_SECRET`, `SP_DRIVE_ID` in wrangler.jsonc `vars`
+
+## Issues Page (`/issues`)
+
+- **Purpose**: Check which accounting documents exist in SharePoint, upload missing ones
+- **Filters**: Year, Month (client-side), Source, Project, Partner — all server/client-side filtered
+- **Quick filters**: Toggle buttons for Show Missing, Above $10K, $5K-$10K, Below $5K (amounts are negative in DB)
+- **Language**: EN/TR toggle with full translations via static `translations` object
+- **Summary cards**: 4 cards (Total Records, Checked, Uploaded, Missing) with partner breakdown rows (GORKEM, RSCC, Others, Total). Missing card shows `(XX%)` ratios.
+- **Activity log**: Shown after SharePoint check — displays per-scope search results with API call counts
+- **Partner values**: Can be GORKEM, RSCC, blank, or other. Blank values use `__blank` sentinel for radix SelectItem compatibility.
 
 ## Key Patterns
 
@@ -121,13 +145,13 @@ git add <files>
 git commit -m "message"
 git push
 
-# 2. Build and deploy to Cloudflare Workers (requires Hyperdrive connection string)
-CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://..." npm run deploy
+# 2. Build and deploy to Cloudflare Workers
+npm run ship
 ```
 
-The Hyperdrive connection string is required at build time because Next.js evaluates server components during the build. The value is stored in `.dev.vars` (git-ignored). Without it, the build will fail with a "no local hyperdrive connection string" error.
+`npm run ship` automatically reads the Hyperdrive connection string from `.dev.vars` and runs the full deploy pipeline. The connection string is required at build time because Next.js evaluates server components during the build.
 
-`npm run deploy` runs `opennextjs-cloudflare build && opennextjs-cloudflare deploy` which:
+Under the hood, `npm run ship` runs `opennextjs-cloudflare build && opennextjs-cloudflare deploy` which:
 1. Builds the Next.js app with webpack
 2. Bundles it for Cloudflare Workers via OpenNext
 3. Uploads assets and the worker bundle via Wrangler

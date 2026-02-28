@@ -9,6 +9,7 @@
     "lint": "eslint",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "ship": "bash scripts/ship.sh",
     "postinstall": "patch-package"
   },
   "dependencies": {
