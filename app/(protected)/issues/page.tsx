@@ -636,24 +636,39 @@ export default function IssuesPage() {
                         { label: t.checked, key: "checked" as const, color: "amber" as const },
                         { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
                     ]).map(({ label, key, color }) => {
-                        const missingPct = (m: { missing: number; total: number }) =>
-                            m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
                         const totalAll = metrics.GORKEM[key] + metrics.RSCC[key] + metrics.OTHERS[key];
-                        const totalTotal = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
                         return (
                             <SummaryCard
                                 key={key}
                                 label={label}
                                 color={color}
                                 rows={[
-                                    { name: "GORKEM", value: isLoading && key === "total" ? "-" : metrics.GORKEM[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.GORKEM) : undefined },
-                                    { name: "RSCC", value: isLoading && key === "total" ? "-" : metrics.RSCC[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.RSCC) : undefined },
-                                    { name: t.others, value: isLoading && key === "total" ? "-" : metrics.OTHERS[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.OTHERS) : undefined },
-                                    { name: t.total, value: isLoading && key === "total" ? "-" : totalAll.toLocaleString(), bold: true, suffix: key === "missing" ? (totalTotal > 0 ? `${Math.round(((metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing) / totalTotal) * 100)}%` : "—") : undefined },
+                                    { name: "GORKEM", value: isLoading && key === "total" ? "-" : metrics.GORKEM[key].toLocaleString() },
+                                    { name: "RSCC", value: isLoading && key === "total" ? "-" : metrics.RSCC[key].toLocaleString() },
+                                    { name: t.others, value: isLoading && key === "total" ? "-" : metrics.OTHERS[key].toLocaleString() },
+                                    { name: t.total, value: isLoading && key === "total" ? "-" : totalAll.toLocaleString(), bold: true },
                                 ]}
                             />
                         );
                     })}
+                    {(() => {
+                        const missingPct = (m: { missing: number; total: number }) =>
+                            m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
+                        const totalMissing = metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing;
+                        const totalAll = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
+                        return (
+                            <SummaryCard
+                                label={t.missing}
+                                color="rose"
+                                rows={[
+                                    { name: "GORKEM", value: metrics.GORKEM.missing.toLocaleString(), suffix: missingPct(metrics.GORKEM) },
+                                    { name: "RSCC", value: metrics.RSCC.missing.toLocaleString(), suffix: missingPct(metrics.RSCC) },
+                                    { name: t.others, value: metrics.OTHERS.missing.toLocaleString(), suffix: missingPct(metrics.OTHERS) },
+                                    { name: t.total, value: totalMissing.toLocaleString(), bold: true, suffix: totalAll > 0 ? `${Math.round((totalMissing / totalAll) * 100)}%` : "—" },
+                                ]}
+                            />
+                        );
+                    })()}
                 </div>
 
                 {/* Text search */}
