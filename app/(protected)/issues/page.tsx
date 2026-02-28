@@ -268,7 +268,7 @@ export default function IssuesPage() {
         if (filterBarRef.current) {
             const observer = new ResizeObserver((entries) => {
                 for (const entry of entries) {
-                    setFilterBarHeight(entry.contentRect.height + 1);
+                    setFilterBarHeight((entry.target as HTMLElement).offsetHeight);
                 }
             });
             observer.observe(filterBarRef.current);
@@ -613,16 +613,9 @@ export default function IssuesPage() {
                 {records && (
                     <div>
                         {contextLabel && (
-                            <div className="flex items-center justify-between mb-3">
-                                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                                    {contextLabel}
-                                </p>
-                                {hasTableFilters && (
-                                    <p className="text-xs text-indigo-600 dark:text-indigo-400">
-                                        {t.filtered}: {filteredRecords.length} / {records.length}
-                                    </p>
-                                )}
-                            </div>
+                            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-3">
+                                {contextLabel}
+                            </p>
                         )}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {([
@@ -749,7 +742,7 @@ export default function IssuesPage() {
                         ))}
                     </div>
                 ) : records && (
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-clip">
                         {/* Sticky table filters */}
                         <div
                             ref={filterBarRef}
@@ -863,6 +856,13 @@ export default function IssuesPage() {
                                 </div>
 
                                 <div className="hidden sm:block w-px h-5 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+
+                                {/* Filtered count */}
+                                {hasTableFilters && records && (
+                                    <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                                        {t.filtered}: {filteredRecords.length} / {records.length}
+                                    </span>
+                                )}
 
                                 {/* Search */}
                                 <div className="relative flex-1 min-w-[200px]">
