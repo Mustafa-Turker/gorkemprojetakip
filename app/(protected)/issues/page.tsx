@@ -1163,8 +1163,8 @@ export default function IssuesPage() {
                     </div>
 
                     {/* Table card — rounded bottom only, connects to filter bar above */}
-                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-auto">
-                            <table className="w-full text-sm">
+                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-clip">
+                            <table className="w-full min-w-[1100px] text-sm">
                                 <thead className="sticky z-10 bg-zinc-50 dark:bg-zinc-900/50" style={{ top: filterBarHeight + 64 }}>
                                     <tr
                                         className="border-b border-zinc-200 dark:border-zinc-800"
@@ -1443,7 +1443,7 @@ export default function IssuesPage() {
 
                 {/* View File Details Dialog */}
                 <Dialog open={!!viewRecord} onOpenChange={(open) => { if (!open) { setViewRecord(null); setThumbnailUrl(null); } }}>
-                    <DialogContent className="sm:max-w-lg">
+                    <DialogContent className="sm:max-w-3xl">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                                 <Eye className="h-5 w-5 text-indigo-500" />
@@ -1457,68 +1457,77 @@ export default function IssuesPage() {
                         {viewRecord && (() => {
                             const meta = fileMetadata[viewRecord.doc];
                             return (
-                                <div className="space-y-4">
-                                    {/* Thumbnail */}
-                                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center min-h-[160px]">
-                                        {thumbnailLoading ? (
-                                            <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
-                                        ) : thumbnailUrl ? (
-                                            <img src={thumbnailUrl} alt={getFilename(viewRecord.doc)} className="max-w-full max-h-[300px] object-contain" />
-                                        ) : (
-                                            <div className="text-center py-8 text-zinc-400">
-                                                <FileText className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                                                <p className="text-sm">{t.noPreview}</p>
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    {/* Left column — record data + metadata */}
+                                    <div className="flex-1 min-w-0 space-y-4">
+                                        {/* Record data */}
+                                        <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.date}</span>
+                                                <p className="font-medium">{formatDate(viewRecord.date)}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.code}</span>
+                                                <p className="font-medium font-mono">{viewRecord.uniquecode}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.project}</span>
+                                                <p className="font-medium">{viewRecord.projekodu}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.source}</span>
+                                                <p className="font-medium">{viewRecord.source}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.vendor}</span>
+                                                <p className="font-medium truncate">{viewRecord.carifirma || "\u2014"}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.amount}</span>
+                                                <p className="font-medium">{formatCurrency(Number(viewRecord.usd_degeri) || 0)}</p>
+                                            </div>
+                                            <div className="col-span-2">
+                                                <span className="text-zinc-500 dark:text-zinc-400">{t.description}</span>
+                                                <p className="font-medium">{viewRecord.aciklama || "\u2014"}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* SharePoint metadata */}
+                                        {meta && (
+                                            <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
+                                                <div>
+                                                    <span className="text-zinc-500 dark:text-zinc-400">{t.created}</span>
+                                                    <p className="font-medium">{meta.createdDateTime ? new Date(meta.createdDateTime).toLocaleString() : "\u2014"}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-zinc-500 dark:text-zinc-400">{t.modified}</span>
+                                                    <p className="font-medium">{meta.lastModifiedDateTime ? new Date(meta.lastModifiedDateTime).toLocaleString() : "\u2014"}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-zinc-500 dark:text-zinc-400">{t.uploadedBy}</span>
+                                                    <p className="font-medium">{meta.createdBy || "\u2014"}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-zinc-500 dark:text-zinc-400">{t.fileSize}</span>
+                                                    <p className="font-medium">{meta.size ? `${(meta.size / 1024).toFixed(1)} KB` : "\u2014"}</p>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
 
-                                    {/* SharePoint metadata */}
-                                    {meta && (
-                                        <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
-                                            <div>
-                                                <span className="text-zinc-500 dark:text-zinc-400">{t.created}</span>
-                                                <p className="font-medium">{meta.createdDateTime ? new Date(meta.createdDateTime).toLocaleString() : "\u2014"}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-zinc-500 dark:text-zinc-400">{t.modified}</span>
-                                                <p className="font-medium">{meta.lastModifiedDateTime ? new Date(meta.lastModifiedDateTime).toLocaleString() : "\u2014"}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-zinc-500 dark:text-zinc-400">{t.uploadedBy}</span>
-                                                <p className="font-medium">{meta.createdBy || "\u2014"}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-zinc-500 dark:text-zinc-400">{t.fileSize}</span>
-                                                <p className="font-medium">{meta.size ? `${(meta.size / 1024).toFixed(1)} KB` : "\u2014"}</p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Record data */}
-                                    <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
-                                        <div>
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.date}</span>
-                                            <p className="font-medium">{formatDate(viewRecord.date)}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.project}</span>
-                                            <p className="font-medium">{viewRecord.projekodu}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.source}</span>
-                                            <p className="font-medium">{viewRecord.source}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.amount}</span>
-                                            <p className="font-medium">{formatCurrency(Number(viewRecord.usd_degeri) || 0)}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.vendor}</span>
-                                            <p className="font-medium truncate">{viewRecord.carifirma || "\u2014"}</p>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <span className="text-zinc-500 dark:text-zinc-400">{t.description}</span>
-                                            <p className="font-medium">{viewRecord.aciklama || "\u2014"}</p>
+                                    {/* Right column — thumbnail */}
+                                    <div className="sm:w-[45%] shrink-0">
+                                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center min-h-[200px] h-full">
+                                            {thumbnailLoading ? (
+                                                <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+                                            ) : thumbnailUrl ? (
+                                                <img src={thumbnailUrl} alt={getFilename(viewRecord.doc)} className="max-w-full max-h-[400px] object-contain" />
+                                            ) : (
+                                                <div className="text-center py-8 text-zinc-400">
+                                                    <FileText className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                                                    <p className="text-sm">{t.noPreview}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
