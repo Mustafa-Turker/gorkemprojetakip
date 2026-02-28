@@ -132,8 +132,17 @@ npm run build    # Production build (webpack)
 npm run start    # Start production server
 npm run lint     # ESLint
 npm run preview  # Build + local Workers preview
-npm run deploy   # Build + deploy to Cloudflare Workers
+npm run deploy   # Build + deploy to Cloudflare Workers (needs HYPERDRIVE env var manually)
+npm run ship     # Build + deploy with env vars auto-loaded from .dev.vars
 ```
+
+**When user says "commit push and build"**, run exactly these 3 commands:
+```bash
+git add <files> && git commit -m "message"
+git push
+npm run ship
+```
+Do NOT run extra git status/diff/log commands. Keep it simple and fast.
 
 ## Deployment
 
