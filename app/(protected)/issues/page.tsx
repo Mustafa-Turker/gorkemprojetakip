@@ -84,8 +84,8 @@ export default function IssuesPage() {
     // Get unique sources and projects for filters
     const { sources, projects } = useMemo(() => {
         if (!records) return { sources: [], projects: [] };
-        const s = [...new Set(records.map((r) => r.source))].sort();
-        const p = [...new Set(records.map((r) => r.projekodu))].sort();
+        const s = [...new Set(records.map((r) => r.source))].filter(Boolean).sort();
+        const p = [...new Set(records.map((r) => r.projekodu))].filter(Boolean).sort();
         return { sources: s, projects: p };
     }, [records]);
 
