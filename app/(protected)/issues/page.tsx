@@ -317,11 +317,13 @@ export default function IssuesPage() {
     }, [year, monthFilter]);
 
     // Check documents on SharePoint (batched in BATCH_SIZE chunks)
+    // Results are accumulated locally and only pushed to state after ALL batches finish
     const runCheck = useCallback(async (docUrls: string[]) => {
         setChecking(true);
         setError(null);
         const totalBatches = Math.ceil(docUrls.length / BATCH_SIZE);
         let mergedStats: CheckStats | null = null;
+        const allResults: Record<string, boolean> = {};
 
         try {
             for (let i = 0; i < docUrls.length; i += BATCH_SIZE) {
@@ -348,8 +350,8 @@ export default function IssuesPage() {
 
                 const { results, stats } = await checkResp.json();
 
-                // Update statuses progressively so user sees results appearing
-                setFileStatuses(prev => ({ ...prev, ...results }));
+                // Accumulate results locally — don't update state yet
+                Object.assign(allResults, results);
 
                 // Merge stats
                 if (!mergedStats) {
@@ -365,10 +367,16 @@ export default function IssuesPage() {
                     mergedStats.perScope.push(...stats.perScope);
                 }
             }
+            // Push all results to state at once after all batches complete
+            setFileStatuses(prev => ({ ...prev, ...allResults }));
             if (mergedStats) setCheckStats(mergedStats);
         } catch (checkErr) {
             console.error("Check error:", checkErr);
             setError(`SharePoint check error: ${(checkErr as Error).message}`);
+            // Still push whatever we collected so far
+            if (Object.keys(allResults).length > 0) {
+                setFileStatuses(prev => ({ ...prev, ...allResults }));
+            }
         } finally {
             setCheckedAll(true);
             setChecking(false);
