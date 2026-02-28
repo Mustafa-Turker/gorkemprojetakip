@@ -25,6 +25,12 @@ export async function GET(request) {
             sql += ` AND projekodu = $${params.length}`;
         }
 
+        const month = searchParams.get("month");
+        if (month) {
+            params.push(parseInt(month));
+            sql += ` AND EXTRACT(MONTH FROM date) = $${params.length}`;
+        }
+
         sql += " ORDER BY date DESC, uniquecode ASC";
 
         const result = await query(sql, params);

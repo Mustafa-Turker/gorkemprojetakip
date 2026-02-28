@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import useSWR from "swr";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,7 +18,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -35,6 +33,9 @@ import {
     ChevronRight,
     ExternalLink,
     Info,
+    ChevronDown,
+    ChevronUp,
+    Download,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -76,6 +77,8 @@ const translations = {
         subtitle: "Upload missing accounting documents to SharePoint",
         checking: "Checking...",
         checkDocuments: "Check Documents",
+        bringData: "Bring Data",
+        loading: "Loading...",
         year: "Year",
         month: "Month",
         allMonths: "All Months",
@@ -134,12 +137,19 @@ const translations = {
         total: "Total",
         errorTitle: "Error",
         errorLoadFailed: "Failed to load documents data.",
+        dateFrom: "From",
+        dateTo: "To",
+        noCheckYet: "Press Bring Data to fetch and check",
+        filtered: "Filtered",
+        noData: "Select year and month, then press Bring Data",
     },
     tr: {
         title: "Belge Yonetimi",
         subtitle: "Eksik muhasebe belgelerini SharePoint'e yukleyin",
         checking: "Kontrol ediliyor...",
         checkDocuments: "Belgeleri Kontrol Et",
+        bringData: "Veri Getir",
+        loading: "Yukleniyor...",
         year: "Yil",
         month: "Ay",
         allMonths: "Tum Aylar",
@@ -198,12 +208,15 @@ const translations = {
         total: "Toplam",
         errorTitle: "Hata",
         errorLoadFailed: "Belge verileri yuklenemedi.",
+        dateFrom: "Baslangic",
+        dateTo: "Bitis",
+        noCheckYet: "Veri getirmek icin Veri Getir'e basin",
+        filtered: "Filtrelenmis",
+        noData: "Yil ve ay secin, ardindan Veri Getir'e basin",
     },
 } as const;
 
 type Lang = keyof typeof translations;
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const PAGE_SIZE = 50;
 
@@ -211,15 +224,25 @@ export default function IssuesPage() {
     const [lang, setLang] = useState<Lang>("en");
     const t = translations[lang];
 
+    // Fetch-level filters
     const [year, setYear] = useState("2024");
     const [monthFilter, setMonthFilter] = useState("all");
-    const [sourceFilter, setSourceFilter] = useState("all");
-    const [projectFilter, setProjectFilter] = useState("all");
-    const [partnerFilter, setPartnerFilter] = useState("all");
+
+    // Table-level filters
+    const [tableSourceFilter, setTableSourceFilter] = useState("all");
+    const [tableProjectFilter, setTableProjectFilter] = useState("all");
+    const [tablePartnerFilter, setTablePartnerFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState<"all" | "missing" | "uploaded">("all");
     const [amountFilter, setAmountFilter] = useState<"all" | "above10k" | "5k-10k" | "below5k">("all");
     const [searchQuery, setSearchQuery] = useState("");
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
     const [page, setPage] = useState(0);
+
+    // Data state (manual fetch, no SWR)
+    const [records, setRecords] = useState<DocumentRecord[] | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Upload dialog state
     const [uploadRecord, setUploadRecord] = useState<DocumentRecord | null>(null);
@@ -234,20 +257,84 @@ export default function IssuesPage() {
     const [checkedAll, setCheckedAll] = useState(false);
     const [checkStats, setCheckStats] = useState<CheckStats | null>(null);
 
-    // Fetch records from DB
-    const apiUrl = useMemo(() => {
-        let url = `/api/documents?year=${year}`;
-        if (sourceFilter !== "all") url += `&source=${sourceFilter}`;
-        if (projectFilter !== "all") url += `&project=${projectFilter}`;
-        return url;
-    }, [year, sourceFilter, projectFilter]);
+    // Activity log
+    const [activityLogOpen, setActivityLogOpen] = useState(false);
 
-    const { data: records, error, isLoading, mutate } = useSWR<DocumentRecord[]>(apiUrl, fetcher, {
-        revalidateOnFocus: false,
-        dedupingInterval: 60000,
-    });
+    // Sticky filter bar ref
+    const filterBarRef = useRef<HTMLDivElement>(null);
+    const [filterBarHeight, setFilterBarHeight] = useState(0);
 
-    // Get unique sources, projects, and partners for filters
+    useEffect(() => {
+        if (filterBarRef.current) {
+            const observer = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    setFilterBarHeight(entry.contentRect.height + 1);
+                }
+            });
+            observer.observe(filterBarRef.current);
+            return () => observer.disconnect();
+        }
+    }, [records]);
+
+    // Bring Data: fetch + auto-check
+    const bringData = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        // Reset everything
+        setFileStatuses({});
+        setCheckedAll(false);
+        setCheckStats(null);
+        setTableSourceFilter("all");
+        setTableProjectFilter("all");
+        setTablePartnerFilter("all");
+        setStatusFilter("all");
+        setAmountFilter("all");
+        setSearchQuery("");
+        setDateFrom("");
+        setDateTo("");
+        setPage(0);
+        setActivityLogOpen(false);
+
+        try {
+            let url = `/api/documents?year=${year}`;
+            if (monthFilter !== "all") url += `&month=${monthFilter}`;
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error("Failed to fetch documents");
+            const data: DocumentRecord[] = await resp.json();
+            setRecords(data);
+            setIsLoading(false);
+
+            // Auto-check SharePoint
+            if (data.length > 0) {
+                setChecking(true);
+                const checkResp = await fetch("/api/documents/check", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ docUrls: data.map((r) => r.doc) }),
+                });
+                if (checkResp.ok) {
+                    const { results, stats } = await checkResp.json();
+                    setFileStatuses(results);
+                    setCheckStats(stats);
+                }
+                setCheckedAll(true);
+                setChecking(false);
+                setActivityLogOpen(true);
+            }
+        } catch (err) {
+            setError((err as Error).message);
+            setIsLoading(false);
+        }
+    }, [year, monthFilter]);
+
+    // Context subtitle for summary cards
+    const contextLabel = useMemo(() => {
+        if (!records) return "";
+        const monthName = monthFilter !== "all" ? t.months[parseInt(monthFilter) - 1] : t.allMonths;
+        return `${year} — ${monthName}`;
+    }, [year, monthFilter, records, t]);
+
+    // Get unique sources, projects, and partners from fetched records for table-level filters
     const { sources, projects, partners } = useMemo(() => {
         if (!records) return { sources: [], projects: [], partners: [] };
         const s = [...new Set(records.map((r) => r.source))].filter(Boolean).sort();
@@ -256,27 +343,24 @@ export default function IssuesPage() {
         return { sources: s, projects: p, partners: pt };
     }, [records]);
 
-    // Filter pipeline: records → month filter → status filter → text search
+    // Filter pipeline: records → table-level filters
     const filteredRecords = useMemo(() => {
         if (!records) return [];
         let filtered = records;
 
-        // Month filter (client-side, from date field)
-        if (monthFilter !== "all") {
-            filtered = filtered.filter((r) => {
-                try {
-                    const d = new Date(r.date);
-                    const m = String(d.getMonth() + 1).padStart(2, "0");
-                    return m === monthFilter;
-                } catch {
-                    return false;
-                }
-            });
+        // Source filter
+        if (tableSourceFilter !== "all") {
+            filtered = filtered.filter((r) => r.source === tableSourceFilter);
+        }
+
+        // Project filter
+        if (tableProjectFilter !== "all") {
+            filtered = filtered.filter((r) => r.projekodu === tableProjectFilter);
         }
 
         // Partner filter
-        if (partnerFilter !== "all") {
-            const pv = partnerFilter === "__blank" ? "" : partnerFilter;
+        if (tablePartnerFilter !== "all") {
+            const pv = tablePartnerFilter === "__blank" ? "" : tablePartnerFilter;
             filtered = filtered.filter((r) => (r.partner || "") === pv);
         }
 
@@ -301,6 +385,14 @@ export default function IssuesPage() {
             });
         }
 
+        // Date range filter
+        if (dateFrom) {
+            filtered = filtered.filter((r) => r.date >= dateFrom);
+        }
+        if (dateTo) {
+            filtered = filtered.filter((r) => r.date <= dateTo);
+        }
+
         // Text search (uniquecode, carifirma, aciklama)
         if (searchQuery.trim()) {
             const q = searchQuery.trim().toLowerCase();
@@ -312,7 +404,7 @@ export default function IssuesPage() {
         }
 
         return filtered;
-    }, [records, monthFilter, partnerFilter, statusFilter, fileStatuses, amountFilter, searchQuery]);
+    }, [records, tableSourceFilter, tableProjectFilter, tablePartnerFilter, statusFilter, fileStatuses, amountFilter, dateFrom, dateTo, searchQuery]);
 
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
@@ -326,7 +418,7 @@ export default function IssuesPage() {
         return "OTHERS";
     };
 
-    // Metrics split by partner group
+    // Metrics split by partner group — based on ALL fetched records (not filtered)
     const metrics = useMemo(() => {
         const empty = { total: 0, checked: 0, missing: 0, uploaded: 0 };
         if (!records) return { GORKEM: { ...empty }, RSCC: { ...empty }, OTHERS: { ...empty } };
@@ -350,35 +442,6 @@ export default function IssuesPage() {
 
         return groups;
     }, [records, fileStatuses]);
-
-    // Check documents on SharePoint (single request, server groups by folder scope)
-    const checkDocuments = useCallback(async () => {
-        if (!filteredRecords || filteredRecords.length === 0) return;
-        setChecking(true);
-        setCheckedAll(false);
-        setCheckStats(null);
-
-        try {
-            const docUrls = filteredRecords.map((r) => r.doc);
-
-            const resp = await fetch("/api/documents/check", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ docUrls }),
-            });
-
-            if (resp.ok) {
-                const { results, stats } = await resp.json();
-                setFileStatuses(results);
-                setCheckStats(stats);
-            }
-            setCheckedAll(true);
-        } catch (err) {
-            console.error("Check failed:", err);
-        } finally {
-            setChecking(false);
-        }
-    }, [filteredRecords]);
 
     // File selection handler
     const handleFileSelect = (file: File) => {
@@ -408,7 +471,6 @@ export default function IssuesPage() {
 
             if (resp.ok && result.success) {
                 setUploadResult({ success: true, message: `${t.uploaded}: ${result.name}` });
-                // Update local status
                 setFileStatuses((prev) => ({ ...prev, [uploadRecord.doc]: true }));
             } else {
                 setUploadResult({ success: false, message: result.error || t.uploadFailed });
@@ -449,19 +511,7 @@ export default function IssuesPage() {
         }
     };
 
-    if (error) {
-        return (
-            <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
-                <main className="p-6 max-w-[1600px] mx-auto">
-                    <Alert variant="destructive" className="max-w-md mx-auto mt-20">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>{t.errorTitle}</AlertTitle>
-                        <AlertDescription>{t.errorLoadFailed}</AlertDescription>
-                    </Alert>
-                </main>
-            </div>
-        );
-    }
+    const hasTableFilters = tableSourceFilter !== "all" || tableProjectFilter !== "all" || tablePartnerFilter !== "all" || statusFilter !== "all" || amountFilter !== "all" || dateFrom || dateTo || searchQuery.trim();
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -474,54 +524,35 @@ export default function IssuesPage() {
                             {t.subtitle}
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        {/* Language switch */}
-                        <div className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-0.5">
-                            <button
-                                onClick={() => setLang("en")}
-                                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                                    lang === "en"
-                                        ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                                }`}
-                            >
-                                EN
-                            </button>
-                            <button
-                                onClick={() => setLang("tr")}
-                                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                                    lang === "tr"
-                                        ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                                }`}
-                            >
-                                TR
-                            </button>
-                        </div>
-                        <Button
-                            onClick={checkDocuments}
-                            disabled={checking || isLoading || !filteredRecords.length}
-                            className="bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25"
+                    {/* Language switch */}
+                    <div className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-0.5">
+                        <button
+                            onClick={() => setLang("en")}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                lang === "en"
+                                    ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                            }`}
                         >
-                            {checking ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    {t.checking}
-                                </>
-                            ) : (
-                                <>
-                                    <Search className="h-4 w-4 mr-2" />
-                                    {t.checkDocuments}
-                                </>
-                            )}
-                        </Button>
+                            EN
+                        </button>
+                        <button
+                            onClick={() => setLang("tr")}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                lang === "tr"
+                                    ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                            }`}
+                        >
+                            TR
+                        </button>
                     </div>
                 </div>
 
-                {/* Filters */}
-                <div className="flex flex-wrap gap-3">
-                    <Select value={year} onValueChange={(v) => { setYear(v); setMonthFilter("all"); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
-                        <SelectTrigger className="w-[120px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                {/* Top bar: Year + Month + Bring Data */}
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-4">
+                    <Select value={year} onValueChange={setYear}>
+                        <SelectTrigger className="w-[120px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
                             <SelectValue placeholder={t.year} />
                         </SelectTrigger>
                         <SelectContent>
@@ -533,8 +564,8 @@ export default function IssuesPage() {
                         </SelectContent>
                     </Select>
 
-                    <Select value={monthFilter} onValueChange={(v) => { setMonthFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
-                        <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                        <SelectTrigger className="w-[140px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
                             <SelectValue placeholder={t.month} />
                         </SelectTrigger>
                         <SelectContent>
@@ -545,206 +576,315 @@ export default function IssuesPage() {
                         </SelectContent>
                     </Select>
 
-                    <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
-                        <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-                            <SelectValue placeholder={t.source} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t.allSources}</SelectItem>
-                            {sources.map((s) => (
-                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
-                        <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-                            <SelectValue placeholder={t.project} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t.allProjects}</SelectItem>
-                            {projects.map((p) => (
-                                <SelectItem key={p} value={p}>{p}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select value={partnerFilter} onValueChange={(v) => { setPartnerFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
-                        <SelectTrigger className="w-[150px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-                            <SelectValue placeholder={t.partner} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t.allPartners}</SelectItem>
-                            {partners.map((p) => (
-                                <SelectItem key={p || "__blank"} value={p || "__blank"}>{p || "—"}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {checkedAll && (
-                        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setPage(0); }}>
-                            <SelectTrigger className="w-[150px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-                                <SelectValue placeholder={t.status} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">{t.allStatus}</SelectItem>
-                                <SelectItem value="missing">{t.missing}</SelectItem>
-                                <SelectItem value="uploaded">{t.uploaded}</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    )}
+                    <Button
+                        onClick={bringData}
+                        disabled={isLoading || checking}
+                        className="flex-1 sm:flex-none sm:min-w-[180px] bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25 h-10"
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                {t.loading}
+                            </>
+                        ) : checking ? (
+                            <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                {t.checking}
+                            </>
+                        ) : (
+                            <>
+                                <Download className="h-4 w-4 mr-2" />
+                                {t.bringData}
+                            </>
+                        )}
+                    </Button>
                 </div>
 
-                {/* Quick filters */}
-                <div className="flex flex-wrap gap-2">
-                    {checkedAll && (
-                        <button
-                            onClick={() => { setStatusFilter(statusFilter === "missing" ? "all" : "missing"); setPage(0); }}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                statusFilter === "missing"
-                                    ? "bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300"
-                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-rose-300 dark:hover:border-rose-700"
-                            }`}
-                        >
-                            <XCircle className="h-3.5 w-3.5" />
-                            {t.showMissing}
-                        </button>
-                    )}
-                    {([
-                        { key: "above10k" as const, label: t.above10k },
-                        { key: "5k-10k" as const, label: t.range5k10k },
-                        { key: "below5k" as const, label: t.below5k },
-                    ]).map(({ key, label }) => (
-                        <button
-                            key={key}
-                            onClick={() => { setAmountFilter(amountFilter === key ? "all" : key); setPage(0); }}
-                            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                amountFilter === key
-                                    ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
-                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-indigo-300 dark:hover:border-indigo-700"
-                            }`}
-                        >
-                            {label}
-                        </button>
-                    ))}
-                </div>
+                {/* Error */}
+                {error && (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>{t.errorTitle}</AlertTitle>
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
 
-                {/* Summary cards with partner breakdown */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {([
-                        { label: t.totalRecords, key: "total" as const, color: "indigo" as const },
-                        { label: t.checked, key: "checked" as const, color: "amber" as const },
-                        { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
-                    ]).map(({ label, key, color }) => {
-                        const totalAll = metrics.GORKEM[key] + metrics.RSCC[key] + metrics.OTHERS[key];
-                        return (
-                            <SummaryCard
-                                key={key}
-                                label={label}
-                                color={color}
-                                rows={[
-                                    { name: "GORKEM", value: isLoading && key === "total" ? "-" : metrics.GORKEM[key].toLocaleString() },
-                                    { name: "RSCC", value: isLoading && key === "total" ? "-" : metrics.RSCC[key].toLocaleString() },
-                                    { name: t.others, value: isLoading && key === "total" ? "-" : metrics.OTHERS[key].toLocaleString() },
-                                    { name: t.total, value: isLoading && key === "total" ? "-" : totalAll.toLocaleString(), bold: true },
-                                ]}
-                            />
-                        );
-                    })}
-                    {(() => {
-                        const missingPct = (m: { missing: number; total: number }) =>
-                            m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
-                        const totalMissing = metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing;
-                        const totalAll = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
-                        return (
-                            <SummaryCard
-                                label={t.missing}
-                                color="rose"
-                                rows={[
-                                    { name: "GORKEM", value: metrics.GORKEM.missing.toLocaleString(), suffix: missingPct(metrics.GORKEM) },
-                                    { name: "RSCC", value: metrics.RSCC.missing.toLocaleString(), suffix: missingPct(metrics.RSCC) },
-                                    { name: t.others, value: metrics.OTHERS.missing.toLocaleString(), suffix: missingPct(metrics.OTHERS) },
-                                    { name: t.total, value: totalMissing.toLocaleString(), bold: true, suffix: totalAll > 0 ? `${Math.round((totalMissing / totalAll) * 100)}%` : "—" },
-                                ]}
-                            />
-                        );
-                    })()}
-                </div>
-
-                {/* Text search */}
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                    <Input
-                        placeholder={t.searchPlaceholder}
-                        value={searchQuery}
-                        onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
-                        className="pl-9 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                    />
-                </div>
-
-                {/* Activity log */}
-                {checkStats && (
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
-                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center gap-2">
-                            <Info className="h-4 w-4 text-indigo-500" />
-                            <h3 className="text-sm font-semibold">{t.activityLog}</h3>
-                        </div>
-                        <div className="p-4 space-y-3">
-                            {/* Summary row */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.scopesSearched}</p>
-                                    <p className="font-semibold">{checkStats.totalScopes}</p>
-                                </div>
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.apiCalls}</p>
-                                    <p className="font-semibold">{checkStats.totalApiCalls}</p>
-                                </div>
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.filesInSharePoint}</p>
-                                    <p className="font-semibold">{checkStats.totalFilesFound}</p>
-                                </div>
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.checkedFoundMissing}</p>
-                                    <p className="font-semibold">
-                                        {checkStats.totalUrls} / <span className="text-emerald-600 dark:text-emerald-400">{checkStats.found}</span> / <span className="text-rose-600 dark:text-rose-400">{checkStats.missing}</span>
+                {/* Summary cards — based on ALL fetched records */}
+                {records && (
+                    <div>
+                        {contextLabel && (
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                                    {contextLabel}
+                                </p>
+                                {hasTableFilters && (
+                                    <p className="text-xs text-indigo-600 dark:text-indigo-400">
+                                        {t.filtered}: {filteredRecords.length} / {records.length}
                                     </p>
-                                </div>
+                                )}
                             </div>
-                            {/* Per-scope breakdown */}
-                            <div className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono">
-                                {checkStats.perScope.map((s) => (
-                                    <div key={s.scope} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                        <Badge
-                                            variant={s.folderExists ? "secondary" : "destructive"}
-                                            className="text-[10px] px-1.5 py-0 min-w-[32px] justify-center"
-                                        >
-                                            {s.folderExists ? "OK" : "404"}
-                                        </Badge>
-                                        <span className="truncate flex-1 text-zinc-600 dark:text-zinc-400">{s.scope}</span>
-                                        <span className="text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
-                                            {s.apiCalls}req &middot; {s.filesInScope}files &middot; {s.found}/{s.checked}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            {([
+                                { label: t.totalRecords, key: "total" as const, color: "indigo" as const },
+                                { label: t.checked, key: "checked" as const, color: "amber" as const },
+                                { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
+                            ]).map(({ label, key, color }) => {
+                                const totalAll = metrics.GORKEM[key] + metrics.RSCC[key] + metrics.OTHERS[key];
+                                return (
+                                    <SummaryCard
+                                        key={key}
+                                        label={label}
+                                        color={color}
+                                        rows={[
+                                            { name: "GORKEM", value: metrics.GORKEM[key].toLocaleString() },
+                                            { name: "RSCC", value: metrics.RSCC[key].toLocaleString() },
+                                            { name: t.others, value: metrics.OTHERS[key].toLocaleString() },
+                                            { name: t.total, value: totalAll.toLocaleString(), bold: true },
+                                        ]}
+                                    />
+                                );
+                            })}
+                            {(() => {
+                                const missingPct = (m: { missing: number; total: number }) =>
+                                    m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
+                                const totalMissing = metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing;
+                                const totalAll = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
+                                return (
+                                    <SummaryCard
+                                        label={t.missing}
+                                        color="rose"
+                                        rows={[
+                                            { name: "GORKEM", value: metrics.GORKEM.missing.toLocaleString(), suffix: missingPct(metrics.GORKEM) },
+                                            { name: "RSCC", value: metrics.RSCC.missing.toLocaleString(), suffix: missingPct(metrics.RSCC) },
+                                            { name: t.others, value: metrics.OTHERS.missing.toLocaleString(), suffix: missingPct(metrics.OTHERS) },
+                                            { name: t.total, value: totalMissing.toLocaleString(), bold: true, suffix: totalAll > 0 ? `${Math.round((totalMissing / totalAll) * 100)}%` : "—" },
+                                        ]}
+                                    />
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
 
-                {/* Records table */}
-                {isLoading ? (
+                {/* Activity log — always visible, collapsible */}
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                    <button
+                        onClick={() => setActivityLogOpen(!activityLogOpen)}
+                        className="w-full px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <Info className="h-4 w-4 text-indigo-500" />
+                            <h3 className="text-sm font-semibold">{t.activityLog}</h3>
+                            {checking && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+                        </div>
+                        {activityLogOpen ? (
+                            <ChevronUp className="h-4 w-4 text-zinc-400" />
+                        ) : (
+                            <ChevronDown className="h-4 w-4 text-zinc-400" />
+                        )}
+                    </button>
+                    {activityLogOpen && (
+                        <div className="p-4 space-y-3">
+                            {checkStats ? (
+                                <>
+                                    {/* Summary row */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.scopesSearched}</p>
+                                            <p className="font-semibold">{checkStats.totalScopes}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.apiCalls}</p>
+                                            <p className="font-semibold">{checkStats.totalApiCalls}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.filesInSharePoint}</p>
+                                            <p className="font-semibold">{checkStats.totalFilesFound}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.checkedFoundMissing}</p>
+                                            <p className="font-semibold">
+                                                {checkStats.totalUrls} / <span className="text-emerald-600 dark:text-emerald-400">{checkStats.found}</span> / <span className="text-rose-600 dark:text-rose-400">{checkStats.missing}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {/* Per-scope breakdown */}
+                                    <div className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono">
+                                        {checkStats.perScope.map((s) => (
+                                            <div key={s.scope} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                                <Badge
+                                                    variant={s.folderExists ? "secondary" : "destructive"}
+                                                    className="text-[10px] px-1.5 py-0 min-w-[32px] justify-center"
+                                                >
+                                                    {s.folderExists ? "OK" : "404"}
+                                                </Badge>
+                                                <span className="truncate flex-1 text-zinc-600 dark:text-zinc-400">{s.scope}</span>
+                                                <span className="text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
+                                                    {s.apiCalls}req &middot; {s.filesInScope}files &middot; {s.found}/{s.checked}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">
+                                    {t.noCheckYet}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Table section with sticky filters + header */}
+                {records === null && !isLoading ? (
+                    <div className="text-center py-20 text-zinc-400 dark:text-zinc-500">
+                        <Download className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                        <p className="text-sm">{t.noData}</p>
+                    </div>
+                ) : isLoading ? (
                     <div className="space-y-3">
                         {Array.from({ length: 10 }).map((_, i) => (
-                            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                            <div key={i} className="h-12 w-full rounded-lg bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
                         ))}
                     </div>
-                ) : (
+                ) : records && (
                     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                        {/* Sticky table filters */}
+                        <div
+                            ref={filterBarRef}
+                            className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-3 space-y-2"
+                        >
+                            {/* Filter row 1: dropdowns */}
+                            <div className="flex flex-wrap gap-2">
+                                <Select value={tableSourceFilter} onValueChange={(v) => { setTableSourceFilter(v); setPage(0); }}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                        <SelectValue placeholder={t.source} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">{t.allSources}</SelectItem>
+                                        {sources.map((s) => (
+                                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select value={tableProjectFilter} onValueChange={(v) => { setTableProjectFilter(v); setPage(0); }}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                        <SelectValue placeholder={t.project} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">{t.allProjects}</SelectItem>
+                                        {projects.map((p) => (
+                                            <SelectItem key={p} value={p}>{p}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select value={tablePartnerFilter} onValueChange={(v) => { setTablePartnerFilter(v); setPage(0); }}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                        <SelectValue placeholder={t.partner} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">{t.allPartners}</SelectItem>
+                                        {partners.map((p) => (
+                                            <SelectItem key={p || "__blank"} value={p || "__blank"}>{p || "—"}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                {checkedAll && (
+                                    <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setPage(0); }}>
+                                        <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                            <SelectValue placeholder={t.status} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">{t.allStatus}</SelectItem>
+                                            <SelectItem value="missing">{t.missing}</SelectItem>
+                                            <SelectItem value="uploaded">{t.uploaded}</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+
+                            {/* Filter row 2: quick toggles + date range + search */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                {checkedAll && (
+                                    <button
+                                        onClick={() => { setStatusFilter(statusFilter === "missing" ? "all" : "missing"); setPage(0); }}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                                            statusFilter === "missing"
+                                                ? "bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300"
+                                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-rose-300 dark:hover:border-rose-700"
+                                        }`}
+                                    >
+                                        <XCircle className="h-3 w-3" />
+                                        {t.showMissing}
+                                    </button>
+                                )}
+                                {([
+                                    { key: "above10k" as const, label: t.above10k },
+                                    { key: "5k-10k" as const, label: t.range5k10k },
+                                    { key: "below5k" as const, label: t.below5k },
+                                ]).map(({ key, label }) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => { setAmountFilter(amountFilter === key ? "all" : key); setPage(0); }}
+                                        className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                                            amountFilter === key
+                                                ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
+                                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-indigo-300 dark:hover:border-indigo-700"
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+
+                                <div className="hidden sm:block w-px h-5 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+
+                                {/* Date range */}
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs text-zinc-500 dark:text-zinc-400">{t.dateFrom}</label>
+                                    <input
+                                        type="date"
+                                        value={dateFrom}
+                                        onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+                                        className="h-7 px-2 text-xs rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs text-zinc-500 dark:text-zinc-400">{t.dateTo}</label>
+                                    <input
+                                        type="date"
+                                        value={dateTo}
+                                        onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+                                        className="h-7 px-2 text-xs rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                                    />
+                                </div>
+
+                                <div className="hidden sm:block w-px h-5 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+
+                                {/* Search */}
+                                <div className="relative flex-1 min-w-[200px]">
+                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                                    <Input
+                                        placeholder={t.searchPlaceholder}
+                                        value={searchQuery}
+                                        onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+                                        className="pl-7 h-7 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Table */}
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                                    <tr
+                                        className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50"
+                                        style={{ position: "sticky", top: filterBarHeight, zIndex: 10 }}
+                                    >
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12">#</th>
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.date}</th>
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.code}</th>
