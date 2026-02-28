@@ -52,7 +52,7 @@ components/
 │   └── multi-select.tsx      # Custom multi-select component
 lib/
 ├── db.js                 # PostgreSQL per-request Client via Hyperdrive
-├── sharepoint.js         # SharePoint Graph API integration (auth, search, upload)
+├── sharepoint.js         # SharePoint Graph API integration (auth, folder listing, upload)
 ├── types.ts              # CostRecord, ChartDataPoint, YearlyDataPoint interfaces
 └── utils.ts              # cn() (tailwind-merge) + formatCurrency (USD)
 wrangler.jsonc            # Cloudflare Workers config + Hyperdrive binding
@@ -67,8 +67,10 @@ patches/
 - Per-request `Client` connection (Workers can't share I/O across requests)
 - **Cost dashboard view**: `public.view_proje_maliyet_ozeti` — columns: `rapor_yili`, `proje_kodu`, `source`, `kategori_lvl_1`, `kategori_lvl_2`, `toplam_tutar`
   - Values are inverted (`-1 * toplam_tutar`) in the API query to fix sign conventions
-- **Documents view**: `public.view_muhasebe_konsolide` — columns used: `uniquecode`, `doc`, `date`, `projekodu`, `source`, `carifirma`, `aciklama`, `usd_degeri`, `partner`
+- **Documents view**: `public.view_muhasebe_konsolide` — columns used: `uniquecode`, `doc`, `date`, `projekodu`, `source`, `carifirma`, `aciklama`, `usd_degeri`, `partner`, `islemturu`, `cost`
   - `doc` column contains full SharePoint URLs for PDF documents
+  - `islemturu` is a transaction type classification (TAH-CA, BN-CA, BN-CZ, KS-CA, KS-CZ, or blank)
+  - `cost` is a numeric classification (not a dollar amount) — used for filtering cost/payment-related records
 
 ## Authentication
 
@@ -101,26 +103,34 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
 
 - **Auth**: Microsoft Graph API with client credentials flow (OAuth2)
 - **Drive**: "Documentation" library on `gorkem.sharepoint.com`
-- **Check flow**: `searchBasedCheck()` groups doc URLs by `basePath/year/month` scope, then searches each scope folder for `.pdf` files. Returns `{ results, stats }` with per-scope metadata and aggregate counts.
+- **Check flow**: `searchBasedCheck()` groups doc URLs by exact parent folder path, then uses `children` endpoint (not `search`) to list each folder's contents. Returns `{ results, stats }` with per-scope metadata and aggregate counts. Uses `children` instead of `search` because Graph API search index misses files in large folders.
 - **Upload flow**: Simple PUT upload via Graph API (`< 4MB`), auto-creates folders
 - **Credentials**: `SP_TENANT_ID`, `SP_CLIENT_ID`, `SP_CLIENT_SECRET`, `SP_DRIVE_ID` in wrangler.jsonc `vars`
 
 ## Issues Page (`/issues`)
 
 - **Purpose**: Check which accounting documents exist in SharePoint, upload missing ones
-- **Filters**: Year, Month (client-side), Source, Project, Partner — all server/client-side filtered
-- **Quick filters**: Toggle buttons for Show Missing, Above $10K, $5K-$10K, Below $5K (amounts are negative in DB)
+- **Filters**: Year, Month (client-side), Source, Project, Partner, Trans. Type (`islemturu`), Cost (>0 / <=0), Status — all client-side filtered
+- **Quick filters**:
+  - **Urgent 1 / Acil 1**: Combo filter — Partner=GORKEM + Cost>0 + Missing + Above $10K
+  - **Urgent 2 / Acil 2**: Combo filter — Partner=GORKEM + Cost>0 + Missing + $5K-$10K
+  - Show Missing, Above $10K, $5K-$10K, Below $5K (amounts are negative in DB)
 - **Language**: EN/TR toggle with full translations via static `translations` object
-- **Summary cards**: 4 cards (Total Records, Checked, Uploaded, Missing) with partner breakdown rows (GORKEM, RSCC, Others, Total). Missing card shows `(XX%)` ratios.
-- **Activity log**: Shown after SharePoint check — displays per-scope search results with API call counts
+- **Summary cards**: 4 cards (Total Records, Checked, Uploaded, Missing) with partner breakdown rows (GORKEM, RSCC, Others, Total). Each row has 3 sub-columns: Head Office (ANK for GORKEM, ERB for RSCC), BAG (common), Total. Missing card shows `(XX%)` ratios per sub-column.
+  - **Cost checkbox**: "Show only Cost & Payment Related" checkbox above cards filters card metrics to records with `cost > 0` (does not affect table).
+- **Table columns**: #, Date, Code, Project, Source, Partner, Vendor (hidden lg), Description (hidden xl), Amount, Trans. Type (hidden lg), Cost (hidden lg), Status, Action
+- **Activity log**: Shown after SharePoint check — displays per-scope listing results with API call counts
+- **Batched check**: Doc URLs are split into batches of 10,000 (`BATCH_SIZE`) to avoid Cloudflare Worker 30s timeout. Results accumulate locally and are pushed to state only after ALL batches complete (prevents premature "missing" indicators). Auto-check runs for all cases (including "All Months").
+- **Sticky layout**: Filter bar uses `sticky top-16 z-20`, thead uses `sticky z-10` with dynamic `top` based on filter bar height. Table wrapper uses `overflow-x-clip` (not `overflow-x-auto`) to avoid breaking sticky positioning.
 - **Partner values**: Can be GORKEM, RSCC, blank, or other. Blank values use `__blank` sentinel for radix SelectItem compatibility.
+- **Source mapping**: ANK = Ankara (GORKEM HQ), ERB = Erbil (RSCC HQ), BAG = Baghdad (shared)
 
 ## Key Patterns
 
 - **Client-side data model**: All cost data fetched once via `/api/costs`, filtered on frontend using multi-select dropdowns per chart
 - **Performance**: Memoized components (`memo`, `useMemo`, `useDeferredValue`), lazy row loading in DataGrid (50 rows at a time)
 - **Project codes**: 22 known projects (HQ, ADM, SRY, THR, etc.) with hardcoded descriptions and sort order in `CostSummaryTable.tsx`
-- **Sources**: Two office sources - ANK (Ankara) and BAG (Baghdad)
+- **Sources**: Three office sources - ANK (Ankara/GORKEM HQ), ERB (Erbil/RSCC HQ), BAG (Baghdad/shared)
 - **Categories**: Two-level hierarchy - `kategori_lvl_1` (e.g., MATERIAL COST, COMMON EXPENSES) and `kategori_lvl_2` (e.g., 21.13 - Turkish Staff)
 - **Currency**: Formatted as USD with `Intl.NumberFormat`
 
