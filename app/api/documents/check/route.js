@@ -19,9 +19,9 @@ export async function POST(request) {
             );
         }
 
-        const results = await searchBasedCheck(docUrls);
+        const checkResult = await searchBasedCheck(docUrls);
 
-        return NextResponse.json(results);
+        return NextResponse.json(checkResult);
     } catch (error) {
         console.error("Document check error:", error);
         return NextResponse.json(

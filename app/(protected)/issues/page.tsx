@@ -22,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 import {
     AlertCircle,
     CheckCircle2,
@@ -32,6 +33,8 @@ import {
     Loader2,
     ChevronLeft,
     ChevronRight,
+    ExternalLink,
+    Info,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -45,15 +48,38 @@ interface DocumentRecord {
     usd_degeri: number;
 }
 
+interface ScopeStats {
+    scope: string;
+    apiCalls: number;
+    filesInScope: number;
+    checked: number;
+    found: number;
+    missing: number;
+    folderExists: boolean;
+}
+
+interface CheckStats {
+    totalUrls: number;
+    unparseable: number;
+    totalScopes: number;
+    totalApiCalls: number;
+    totalFilesFound: number;
+    found: number;
+    missing: number;
+    perScope: ScopeStats[];
+}
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const PAGE_SIZE = 50;
 
 export default function IssuesPage() {
     const [year, setYear] = useState("2024");
+    const [monthFilter, setMonthFilter] = useState("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [projectFilter, setProjectFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState<"all" | "missing" | "uploaded">("all");
+    const [searchQuery, setSearchQuery] = useState("");
     const [page, setPage] = useState(0);
 
     // Upload dialog state
@@ -67,6 +93,7 @@ export default function IssuesPage() {
     const [fileStatuses, setFileStatuses] = useState<Record<string, boolean>>({});
     const [checking, setChecking] = useState(false);
     const [checkedAll, setCheckedAll] = useState(false);
+    const [checkStats, setCheckStats] = useState<CheckStats | null>(null);
 
     // Fetch records from DB
     const apiUrl = useMemo(() => {
@@ -89,17 +116,46 @@ export default function IssuesPage() {
         return { sources: s, projects: p };
     }, [records]);
 
-    // Filter by document status
+    // Filter pipeline: records → month filter → status filter → text search
     const filteredRecords = useMemo(() => {
         if (!records) return [];
-        if (statusFilter === "all") return records;
-        return records.filter((r) => {
-            const exists = fileStatuses[r.doc];
-            if (statusFilter === "missing") return exists === false;
-            if (statusFilter === "uploaded") return exists === true;
-            return true;
-        });
-    }, [records, statusFilter, fileStatuses]);
+        let filtered = records;
+
+        // Month filter (client-side, from date field)
+        if (monthFilter !== "all") {
+            filtered = filtered.filter((r) => {
+                try {
+                    const d = new Date(r.date);
+                    const m = String(d.getMonth() + 1).padStart(2, "0");
+                    return m === monthFilter;
+                } catch {
+                    return false;
+                }
+            });
+        }
+
+        // Status filter
+        if (statusFilter !== "all") {
+            filtered = filtered.filter((r) => {
+                const exists = fileStatuses[r.doc];
+                if (statusFilter === "missing") return exists === false;
+                if (statusFilter === "uploaded") return exists === true;
+                return true;
+            });
+        }
+
+        // Text search (uniquecode, carifirma, aciklama)
+        if (searchQuery.trim()) {
+            const q = searchQuery.trim().toLowerCase();
+            filtered = filtered.filter((r) =>
+                r.uniquecode?.toLowerCase().includes(q) ||
+                r.carifirma?.toLowerCase().includes(q) ||
+                r.aciklama?.toLowerCase().includes(q)
+            );
+        }
+
+        return filtered;
+    }, [records, monthFilter, statusFilter, fileStatuses, searchQuery]);
 
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
@@ -116,12 +172,13 @@ export default function IssuesPage() {
 
     // Check documents on SharePoint (single request, server groups by folder scope)
     const checkDocuments = useCallback(async () => {
-        if (!records || records.length === 0) return;
+        if (!filteredRecords || filteredRecords.length === 0) return;
         setChecking(true);
         setCheckedAll(false);
+        setCheckStats(null);
 
         try {
-            const docUrls = records.map((r) => r.doc);
+            const docUrls = filteredRecords.map((r) => r.doc);
 
             const resp = await fetch("/api/documents/check", {
                 method: "POST",
@@ -130,8 +187,9 @@ export default function IssuesPage() {
             });
 
             if (resp.ok) {
-                const results = await resp.json();
+                const { results, stats } = await resp.json();
                 setFileStatuses(results);
+                setCheckStats(stats);
             }
             setCheckedAll(true);
         } catch (err) {
@@ -139,7 +197,7 @@ export default function IssuesPage() {
         } finally {
             setChecking(false);
         }
-    }, [records]);
+    }, [filteredRecords]);
 
     // File selection handler
     const handleFileSelect = (file: File) => {
@@ -237,7 +295,7 @@ export default function IssuesPage() {
                     </div>
                     <Button
                         onClick={checkDocuments}
-                        disabled={checking || isLoading || !records?.length}
+                        disabled={checking || isLoading || !filteredRecords.length}
                         className="bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white shadow-lg shadow-indigo-500/25"
                     >
                         {checking ? (
@@ -248,7 +306,7 @@ export default function IssuesPage() {
                         ) : (
                             <>
                                 <Search className="h-4 w-4 mr-2" />
-                                Check SharePoint
+                                Check Documents
                             </>
                         )}
                     </Button>
@@ -256,7 +314,7 @@ export default function IssuesPage() {
 
                 {/* Filters */}
                 <div className="flex flex-wrap gap-3">
-                    <Select value={year} onValueChange={(v) => { setYear(v); setPage(0); setFileStatuses({}); setCheckedAll(false); }}>
+                    <Select value={year} onValueChange={(v) => { setYear(v); setMonthFilter("all"); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
                         <SelectTrigger className="w-[120px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
                             <SelectValue placeholder="Year" />
                         </SelectTrigger>
@@ -267,7 +325,28 @@ export default function IssuesPage() {
                         </SelectContent>
                     </Select>
 
-                    <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(0); }}>
+                    <Select value={monthFilter} onValueChange={(v) => { setMonthFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
+                        <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+                            <SelectValue placeholder="Month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Months</SelectItem>
+                            <SelectItem value="01">January</SelectItem>
+                            <SelectItem value="02">February</SelectItem>
+                            <SelectItem value="03">March</SelectItem>
+                            <SelectItem value="04">April</SelectItem>
+                            <SelectItem value="05">May</SelectItem>
+                            <SelectItem value="06">June</SelectItem>
+                            <SelectItem value="07">July</SelectItem>
+                            <SelectItem value="08">August</SelectItem>
+                            <SelectItem value="09">September</SelectItem>
+                            <SelectItem value="10">October</SelectItem>
+                            <SelectItem value="11">November</SelectItem>
+                            <SelectItem value="12">December</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
                         <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
                             <SelectValue placeholder="Source" />
                         </SelectTrigger>
@@ -279,7 +358,7 @@ export default function IssuesPage() {
                         </SelectContent>
                     </Select>
 
-                    <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setPage(0); }}>
+                    <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setPage(0); setFileStatuses({}); setCheckedAll(false); setCheckStats(null); }}>
                         <SelectTrigger className="w-[140px] bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
                             <SelectValue placeholder="Project" />
                         </SelectTrigger>
@@ -329,6 +408,67 @@ export default function IssuesPage() {
                     />
                 </div>
 
+                {/* Text search */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                    <Input
+                        placeholder="Search by code, vendor, or description..."
+                        value={searchQuery}
+                        onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+                        className="pl-9 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                    />
+                </div>
+
+                {/* Activity log */}
+                {checkStats && (
+                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center gap-2">
+                            <Info className="h-4 w-4 text-indigo-500" />
+                            <h3 className="text-sm font-semibold">Check Activity Log</h3>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            {/* Summary row */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Scopes Searched</p>
+                                    <p className="font-semibold">{checkStats.totalScopes}</p>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">API Calls</p>
+                                    <p className="font-semibold">{checkStats.totalApiCalls}</p>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Files in SharePoint</p>
+                                    <p className="font-semibold">{checkStats.totalFilesFound}</p>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Checked / Found / Missing</p>
+                                    <p className="font-semibold">
+                                        {checkStats.totalUrls} / <span className="text-emerald-600 dark:text-emerald-400">{checkStats.found}</span> / <span className="text-rose-600 dark:text-rose-400">{checkStats.missing}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            {/* Per-scope breakdown */}
+                            <div className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono">
+                                {checkStats.perScope.map((s) => (
+                                    <div key={s.scope} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                        <Badge
+                                            variant={s.folderExists ? "secondary" : "destructive"}
+                                            className="text-[10px] px-1.5 py-0 min-w-[32px] justify-center"
+                                        >
+                                            {s.folderExists ? "OK" : "404"}
+                                        </Badge>
+                                        <span className="truncate flex-1 text-zinc-600 dark:text-zinc-400">{s.scope}</span>
+                                        <span className="text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
+                                            {s.apiCalls}req &middot; {s.filesInScope}files &middot; {s.found}/{s.checked}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Records table */}
                 {isLoading ? (
                     <div className="space-y-3">
@@ -351,7 +491,7 @@ export default function IssuesPage() {
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden xl:table-cell">Description</th>
                                         <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Amount</th>
                                         <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-20">Status</th>
-                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-24">Action</th>
+                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-32">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -391,17 +531,28 @@ export default function IssuesPage() {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
-                                                    {status === false && (
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => { setUploadRecord(record); setUploadResult(null); setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
-                                                            className="h-7 px-2 text-xs border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        <a
+                                                            href={record.doc}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
+                                                            title="View document"
                                                         >
-                                                            <Upload className="h-3 w-3 mr-1" />
-                                                            Upload
-                                                        </Button>
-                                                    )}
+                                                            <ExternalLink className="h-3.5 w-3.5" />
+                                                        </a>
+                                                        {status === false && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => { setUploadRecord(record); setUploadResult(null); setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
+                                                                className="h-7 px-2 text-xs border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                            >
+                                                                <Upload className="h-3 w-3 mr-1" />
+                                                                Upload
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
