@@ -1064,7 +1064,7 @@ export default function IssuesPage() {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap hidden lg:table-cell">
-                                                    {formatCurrency(Number(record.cost) || 0)}
+                                                    {Number(record.cost) || 0}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     {status === undefined ? (
