@@ -9,7 +9,7 @@ export async function GET(request) {
         const project = searchParams.get("project");
 
         let sql = `
-            SELECT uniquecode, doc, date, projekodu, source, carifirma, aciklama, usd_degeri
+            SELECT uniquecode, doc, date, projekodu, source, carifirma, aciklama, usd_degeri, partner
             FROM public.view_muhasebe_konsolide
             WHERE year = $1 AND doc IS NOT NULL AND doc != ''
         `;
