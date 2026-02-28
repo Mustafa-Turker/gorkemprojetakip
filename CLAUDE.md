@@ -4,12 +4,13 @@ Internal web application for GORKEM company to display live accounting/cost data
 
 ## Tech Stack
 
-- **Framework**: Next.js 16.1.2 (App Router) with React 19
+- **Framework**: Next.js 16.1.6 (App Router, webpack bundler) with React 19
 - **Language**: TypeScript (components) + JavaScript (API routes, DB layer)
 - **Styling**: Tailwind CSS v4 with shadcn/ui (New York style, neutral base color)
 - **Charts**: Recharts v3
 - **Data Fetching**: SWR (client-side) with 60s deduping interval
-- **Database**: PostgreSQL via `pg` driver (connection pooled)
+- **Database**: PostgreSQL via `pg` driver through Cloudflare Hyperdrive
+- **Hosting**: Cloudflare Workers via @opennextjs/cloudflare
 - **Icons**: lucide-react
 - **Fonts**: Geist Sans + Geist Mono
 
@@ -17,15 +18,17 @@ Internal web application for GORKEM company to display live accounting/cost data
 
 ```
 app/
-├── page.tsx              # Main dashboard (Cost Metrics) - client component
-├── layout.tsx            # Root layout with NavHeader
-├── login/page.tsx        # Login page
-├── received/page.tsx     # Placeholder - "Coming Soon"
-├── balances/page.tsx     # Placeholder - "Coming Soon"
-├── study/page.tsx        # Placeholder - "Coming Soon"
-├── issues/page.tsx       # Placeholder - "Coming Soon"
-├── error.tsx             # Error boundary
-├── global-error.tsx      # Global error boundary
+├── layout.tsx            # Root layout (fonts, global styles)
+├── login/page.tsx        # Login page (public, no auth required)
+├── (protected)/          # Route group with server-side auth check
+│   ├── layout.tsx        # Auth guard - checks cookie, redirects to /login
+│   ├── page.tsx          # Main dashboard (Cost Metrics) - client component
+│   ├── received/page.tsx # Placeholder - "Coming Soon"
+│   ├── balances/page.tsx # Placeholder - "Coming Soon"
+│   ├── study/page.tsx    # Placeholder - "Coming Soon"
+│   ├── issues/page.tsx   # Placeholder - "Coming Soon"
+│   ├── error.tsx         # Error boundary
+│   └── global-error.tsx  # Global error boundary
 ├── globals.css           # Tailwind config + CSS variables (light/dark)
 ├── api/
 │   ├── auth/
@@ -44,16 +47,19 @@ components/
 ├── ui/                       # shadcn/ui primitives (button, card, table, select, badge, dialog, etc.)
 │   └── multi-select.tsx      # Custom multi-select component
 lib/
-├── db.js                 # PostgreSQL connection pool + query helper
+├── db.js                 # PostgreSQL per-request Client via Hyperdrive
 ├── types.ts              # CostRecord, ChartDataPoint, YearlyDataPoint interfaces
 └── utils.ts              # cn() (tailwind-merge) + formatCurrency (USD)
-middleware.ts             # Auth guard - redirects unauthenticated users to /login
+wrangler.jsonc            # Cloudflare Workers config + Hyperdrive binding
+open-next.config.ts       # OpenNext adapter config
+patches/
+└── wrangler+4.69.0.patch # Windows fix: strips ?module from wasm file paths
 ```
 
 ## Database
 
-- Connects to PostgreSQL using env vars: `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`
-- SSL is disabled (`ssl: false`)
+- Connects to PostgreSQL via Cloudflare Hyperdrive (binding: `HYPERDRIVE`)
+- Per-request `Client` connection (Workers can't share I/O across requests)
 - Reads from view: `public.view_proje_maliyet_ozeti`
 - Schema columns: `rapor_yili`, `proje_kodu`, `source`, `kategori_lvl_1`, `kategori_lvl_2`, `toplam_tutar`
 - Values are inverted (`-1 * toplam_tutar`) in the API query to fix sign conventions
@@ -61,20 +67,29 @@ middleware.ts             # Auth guard - redirects unauthenticated users to /log
 ## Authentication
 
 - Simple cookie-based auth (`auth_token` cookie, 24h expiry, httpOnly)
-- Users defined in `USERS` env var as JSON object `{"username": "password", ...}`
-- Middleware protects all routes except `/login` and `/api/auth/login`
-- No hashing - plaintext password comparison against env var
+- Users defined in `USERS` var in wrangler.jsonc as JSON object `{"username": "password", ...}`
+- Protected routes use `(protected)` route group with server-side cookie check in layout
+- No hashing - plaintext password comparison
 
-## Environment Variables (.env.local)
+## Cloudflare Configuration
 
+- **Worker name**: `muhasebe-dashboard`
+- **Hyperdrive ID**: `baff2c90c33641ceb02b10d3c86568ff`
+- **Custom domain**: `muhasebe.gorkemprojetakip.com.tr`
+- **Workers.dev**: `muhasebe-dashboard.mustafaturker.workers.dev`
+- **Compatibility flags**: `nodejs_compat`
+- **Build**: Uses webpack (not Turbopack) — OpenNext doesn't support Turbopack yet
+- **Windows patch**: `patches/wrangler+4.69.0.patch` fixes .wasm?module path issue on Windows
+
+## Environment Variables
+
+For local development, create `.dev.vars`:
 ```
-PG_HOST=
-PG_PORT=
-PG_DATABASE=
-PG_USER=
-PG_PASSWORD=
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://user:pass@host:port/db
 USERS={"username":"password"}
 ```
+
+For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hyperdrive handles the DB connection.
 
 ## Key Patterns
 
@@ -88,8 +103,15 @@ USERS={"username":"password"}
 ## Commands
 
 ```bash
-npm run dev      # Start development server
-npm run build    # Production build
+npm run dev      # Start development server (Turbopack, local Hyperdrive emulation)
+npm run build    # Production build (webpack)
 npm run start    # Start production server
 npm run lint     # ESLint
+npm run preview  # Build + local Workers preview
+npm run deploy   # Build + deploy to Cloudflare Workers
 ```
+
+## Branches
+
+- `main` — Cloudflare Workers version (current)
+- `vercel-backup` — Original Vercel-compatible code

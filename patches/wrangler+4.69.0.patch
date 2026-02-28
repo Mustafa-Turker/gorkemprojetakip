@@ -1,0 +1,33 @@
+diff --git a/node_modules/wrangler/wrangler-dist/cli.js b/node_modules/wrangler/wrangler-dist/cli.js
+index 106c89f..aa9e1a3 100644
+--- a/node_modules/wrangler/wrangler-dist/cli.js
++++ b/node_modules/wrangler/wrangler-dist/cli.js
+@@ -43201,7 +43201,8 @@ function createModuleCollector(props) {
+                 filePath
+               );
+               const fileHash = crypto2__default.default.createHash("sha1").update(fileContent).digest("hex");
+-              const fileName = props.preserveFileNames ? args.path : `./${fileHash}-${path3__namespace.default.basename(args.path)}`;
++              const cleanPath = args.path.split("?")[0];
++              const fileName = props.preserveFileNames ? cleanPath : `./${fileHash}-${path3__namespace.default.basename(cleanPath)}`;
+               const { rule } = rulesMatchers.find(({ regex: regex2 }) => regex2.test(fileName)) || {};
+               if (rule) {
+                 modules.push({
+@@ -43235,7 +43236,7 @@ function createModuleCollector(props) {
+                 if (args.pluginData?.skip) {
+                   return;
+                 }
+-                let filePath = path3__namespace.default.join(args.resolveDir, args.path);
++                let filePath = path3__namespace.default.join(args.resolveDir, args.path.split("?")[0]);
+                 if (foundModulePaths.includes(filePath)) {
+                   return { path: args.path, external: true };
+                 }
+@@ -43267,7 +43268,8 @@ function createModuleCollector(props) {
+                   filePath
+                 );
+                 const fileHash = crypto2__default.default.createHash("sha1").update(fileContent).digest("hex");
+-                const fileName = props.preserveFileNames ? args.path : `./${fileHash}-${path3__namespace.default.basename(args.path)}`;
++                const cleanPath2 = args.path.split("?")[0];
++                const fileName = props.preserveFileNames ? cleanPath2 : `./${fileHash}-${path3__namespace.default.basename(cleanPath2)}`;
+                 modules.push({
+                   name: fileName,
+                   filePath,

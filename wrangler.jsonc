@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "muhasebe-dashboard",
+  "compatibility_date": "2025-05-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "USERS": "{\"mustafa\":\"Mustafa.06\", \"oms\":\"oms213\", \"gorkem\":\"Gorkem775!\", \"memduh\":\"Memduh.0606\"}"
+  },
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "baff2c90c33641ceb02b10d3c86568ff"
+    }
+  ],
+  // Custom domain — requires deleting the existing DNS A record for muhasebe.gorkemprojetakip.com.tr
+  // in the Cloudflare dashboard first, then re-deploying
+  "routes": [
+    {
+      "pattern": "muhasebe.gorkemprojetakip.com.tr/*",
+      "zone_id": "689d0c7a0f85129b0eab484fa062679f"
+    }
+  ]
+}
