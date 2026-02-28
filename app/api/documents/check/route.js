@@ -1,4 +1,4 @@
-import { batchCheckFiles } from "@/lib/sharepoint";
+import { searchBasedCheck } from "@/lib/sharepoint";
 import { NextResponse } from "next/server";
 
 export async function POST(request) {
@@ -12,15 +12,14 @@ export async function POST(request) {
             );
         }
 
-        // Limit batch size to prevent timeout
-        if (docUrls.length > 100) {
+        if (docUrls.length > 15000) {
             return NextResponse.json(
-                { error: "Maximum 100 URLs per batch" },
+                { error: "Maximum 15000 URLs per request" },
                 { status: 400 }
             );
         }
 
-        const results = await batchCheckFiles(docUrls);
+        const results = await searchBasedCheck(docUrls);
 
         return NextResponse.json(results);
     } catch (error) {

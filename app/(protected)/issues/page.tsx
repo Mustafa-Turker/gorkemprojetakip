@@ -114,31 +114,24 @@ export default function IssuesPage() {
         return { total: records.length, checked, missing, uploaded };
     }, [records, fileStatuses]);
 
-    // Check documents on SharePoint (batch)
+    // Check documents on SharePoint (single request, server groups by folder scope)
     const checkDocuments = useCallback(async () => {
         if (!records || records.length === 0) return;
         setChecking(true);
         setCheckedAll(false);
 
         try {
-            // Process in batches of 100
-            const allStatuses: Record<string, boolean> = {};
-            for (let i = 0; i < records.length; i += 100) {
-                const batch = records.slice(i, i + 100);
-                const docUrls = batch.map((r) => r.doc);
+            const docUrls = records.map((r) => r.doc);
 
-                const resp = await fetch("/api/documents/check", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ docUrls }),
-                });
+            const resp = await fetch("/api/documents/check", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ docUrls }),
+            });
 
-                if (resp.ok) {
-                    const results = await resp.json();
-                    Object.assign(allStatuses, results);
-                    // Update progressively
-                    setFileStatuses((prev) => ({ ...prev, ...results }));
-                }
+            if (resp.ok) {
+                const results = await resp.json();
+                setFileStatuses(results);
             }
             setCheckedAll(true);
         } catch (err) {
