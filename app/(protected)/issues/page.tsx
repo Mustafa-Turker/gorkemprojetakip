@@ -131,6 +131,7 @@ const translations = {
         partner: "Partner",
         allPartners: "All Partners",
         others: "Others",
+        total: "Total",
         errorTitle: "Error",
         errorLoadFailed: "Failed to load documents data.",
     },
@@ -194,6 +195,7 @@ const translations = {
         partner: "Ortak",
         allPartners: "Tum Ortaklar",
         others: "Diger",
+        total: "Toplam",
         errorTitle: "Hata",
         errorLoadFailed: "Belge verileri yuklenemedi.",
     },
@@ -627,38 +629,32 @@ export default function IssuesPage() {
                     ))}
                 </div>
 
-                {/* Summary cards by partner group */}
-                {(["GORKEM", "RSCC", "OTHERS"] as const).map((group) => {
-                    const m = metrics[group];
-                    const label = group === "OTHERS" ? t.others : group;
-                    return (
-                        <div key={group}>
-                            <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">{label}</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                <SummaryCard
-                                    label={t.totalRecords}
-                                    value={isLoading ? "-" : m.total.toLocaleString()}
-                                    color="indigo"
-                                />
-                                <SummaryCard
-                                    label={t.checked}
-                                    value={m.checked.toLocaleString()}
-                                    color="amber"
-                                />
-                                <SummaryCard
-                                    label={t.uploaded}
-                                    value={m.uploaded.toLocaleString()}
-                                    color="emerald"
-                                />
-                                <SummaryCard
-                                    label={t.missing}
-                                    value={m.missing.toLocaleString()}
-                                    color="rose"
-                                />
-                            </div>
-                        </div>
-                    );
-                })}
+                {/* Summary cards with partner breakdown */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {([
+                        { label: t.totalRecords, key: "total" as const, color: "indigo" as const },
+                        { label: t.checked, key: "checked" as const, color: "amber" as const },
+                        { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
+                    ]).map(({ label, key, color }) => {
+                        const missingPct = (m: { missing: number; total: number }) =>
+                            m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
+                        const totalAll = metrics.GORKEM[key] + metrics.RSCC[key] + metrics.OTHERS[key];
+                        const totalTotal = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
+                        return (
+                            <SummaryCard
+                                key={key}
+                                label={label}
+                                color={color}
+                                rows={[
+                                    { name: "GORKEM", value: isLoading && key === "total" ? "-" : metrics.GORKEM[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.GORKEM) : undefined },
+                                    { name: "RSCC", value: isLoading && key === "total" ? "-" : metrics.RSCC[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.RSCC) : undefined },
+                                    { name: t.others, value: isLoading && key === "total" ? "-" : metrics.OTHERS[key].toLocaleString(), suffix: key === "missing" ? missingPct(metrics.OTHERS) : undefined },
+                                    { name: t.total, value: isLoading && key === "total" ? "-" : totalAll.toLocaleString(), bold: true, suffix: key === "missing" ? (totalTotal > 0 ? `${Math.round(((metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing) / totalTotal) * 100)}%` : "—") : undefined },
+                                ]}
+                            />
+                        );
+                    })}
+                </div>
 
                 {/* Text search */}
                 <div className="relative">
@@ -988,8 +984,12 @@ export default function IssuesPage() {
     );
 }
 
-// Simple summary card component
-function SummaryCard({ label, value, color }: { label: string; value: string; color: "indigo" | "emerald" | "amber" | "rose" }) {
+// Summary card with partner breakdown rows
+function SummaryCard({ label, color, rows }: {
+    label: string;
+    color: "indigo" | "emerald" | "amber" | "rose";
+    rows: { name: string; value: string; bold?: boolean; suffix?: string }[];
+}) {
     const gradients = {
         indigo: "from-indigo-500 to-violet-600",
         emerald: "from-emerald-500 to-teal-600",
@@ -1000,8 +1000,18 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
     return (
         <div className="relative overflow-hidden rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm p-4">
             <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradients[color]}`} />
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{label}</p>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">{label}</p>
+            <div className="space-y-1">
+                {rows.map((row) => (
+                    <div key={row.name} className={`flex items-center justify-between ${row.bold ? "border-t border-zinc-200 dark:border-zinc-800 pt-1 mt-1" : ""}`}>
+                        <span className={`text-xs ${row.bold ? "font-semibold text-zinc-700 dark:text-zinc-300" : "text-zinc-500 dark:text-zinc-400"}`}>{row.name}</span>
+                        <span className={`tabular-nums ${row.bold ? "text-base font-bold" : "text-sm font-medium"}`}>
+                            {row.value}
+                            {row.suffix && <span className="text-xs font-normal text-zinc-400 dark:text-zinc-500 ml-1">({row.suffix})</span>}
+                        </span>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
