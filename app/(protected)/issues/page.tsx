@@ -136,6 +136,8 @@ const translations = {
         partner: "Partner",
         allPartners: "All Partners",
         others: "Others",
+        urgent1: "Urgent 1",
+        urgent2: "Urgent 2",
         transType: "Trans. Type",
         allTransTypes: "All Types",
         cost: "Cost",
@@ -213,6 +215,8 @@ const translations = {
         partner: "Ortak",
         allPartners: "Tum Ortaklar",
         others: "Diger",
+        urgent1: "Acil 1",
+        urgent2: "Acil 2",
         transType: "Islem Turu",
         allTransTypes: "Tum Turler",
         cost: "Maliyet",
@@ -925,6 +929,40 @@ export default function IssuesPage() {
 
                             {/* Filter row 2: quick toggles + date range + search */}
                             <div className="flex flex-wrap items-center gap-2">
+                                {checkedAll && ([
+                                    { key: "urgent1" as const, label: t.urgent1, amount: "above10k" as const },
+                                    { key: "urgent2" as const, label: t.urgent2, amount: "5k-10k" as const },
+                                ].map(({ key, label, amount }) => {
+                                    const isActive = tablePartnerFilter === "GORKEM" && costFilter === "positive" && statusFilter === "missing" && amountFilter === amount;
+                                    return (
+                                        <button
+                                            key={key}
+                                            onClick={() => {
+                                                if (isActive) {
+                                                    setTablePartnerFilter("all");
+                                                    setCostFilter("all");
+                                                    setStatusFilter("all");
+                                                    setAmountFilter("all");
+                                                } else {
+                                                    setTablePartnerFilter("GORKEM");
+                                                    setCostFilter("positive");
+                                                    setStatusFilter("missing");
+                                                    setAmountFilter(amount);
+                                                }
+                                                setPage(0);
+                                            }}
+                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                                                isActive
+                                                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-700 text-amber-700 dark:text-amber-300"
+                                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-amber-400 dark:hover:border-amber-600"
+                                            }`}
+                                        >
+                                            <AlertCircle className="h-3 w-3" />
+                                            {label}
+                                        </button>
+                                    );
+                                }))}
+
                                 {checkedAll && (
                                     <button
                                         onClick={() => { setStatusFilter(statusFilter === "missing" ? "all" : "missing"); setPage(0); }}
