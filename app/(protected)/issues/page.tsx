@@ -307,19 +307,29 @@ export default function IssuesPage() {
             // Auto-check SharePoint
             if (data.length > 0) {
                 setChecking(true);
-                const checkResp = await fetch("/api/documents/check", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ docUrls: data.map((r) => r.doc) }),
-                });
-                if (checkResp.ok) {
-                    const { results, stats } = await checkResp.json();
-                    setFileStatuses(results);
-                    setCheckStats(stats);
+                try {
+                    const checkResp = await fetch("/api/documents/check", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ docUrls: data.map((r) => r.doc) }),
+                    });
+                    if (checkResp.ok) {
+                        const { results, stats } = await checkResp.json();
+                        setFileStatuses(results);
+                        setCheckStats(stats);
+                    } else {
+                        const errBody = await checkResp.text().catch(() => "");
+                        console.error("Check failed:", checkResp.status, errBody);
+                        setError(`SharePoint check failed (${checkResp.status})`);
+                    }
+                } catch (checkErr) {
+                    console.error("Check error:", checkErr);
+                    setError(`SharePoint check error: ${(checkErr as Error).message}`);
+                } finally {
+                    setCheckedAll(true);
+                    setChecking(false);
+                    setActivityLogOpen(true);
                 }
-                setCheckedAll(true);
-                setChecking(false);
-                setActivityLogOpen(true);
             }
         } catch (err) {
             setError((err as Error).message);
@@ -742,12 +752,12 @@ export default function IssuesPage() {
                         ))}
                     </div>
                 ) : records && (
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-clip">
-                        {/* Sticky table filters */}
-                        <div
-                            ref={filterBarRef}
-                            className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-3 space-y-2"
-                        >
+                    <>
+                    {/* Sticky table filters — outside the card so sticky works */}
+                    <div
+                        ref={filterBarRef}
+                        className="sticky top-16 z-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-b-0 rounded-t-xl shadow-sm p-3 space-y-2 -mb-px"
+                    >
                             {/* Filter row 1: dropdowns */}
                             <div className="flex flex-wrap gap-2">
                                 <Select value={tableSourceFilter} onValueChange={(v) => { setTableSourceFilter(v); setPage(0); }}>
@@ -875,15 +885,15 @@ export default function IssuesPage() {
                                     />
                                 </div>
                             </div>
-                        </div>
+                    </div>
 
-                        {/* Table */}
-                        <div className="overflow-x-auto">
+                    {/* Table card — rounded bottom only, connects to filter bar above */}
+                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr
                                         className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50"
-                                        style={{ position: "sticky", top: filterBarHeight, zIndex: 10 }}
+                                        style={{ position: "sticky", top: filterBarHeight + 64, zIndex: 10 }}
                                     >
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12">#</th>
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.date}</th>
@@ -977,7 +987,6 @@ export default function IssuesPage() {
                                     )}
                                 </tbody>
                             </table>
-                        </div>
 
                         {/* Pagination */}
                         {totalPages > 1 && (
@@ -1006,6 +1015,7 @@ export default function IssuesPage() {
                             </div>
                         )}
                     </div>
+                    </>
                 )}
 
                 {/* Upload Dialog */}
