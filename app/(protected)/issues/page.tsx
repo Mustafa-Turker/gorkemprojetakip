@@ -48,6 +48,8 @@ interface DocumentRecord {
     aciklama: string;
     usd_degeri: number;
     partner: string;
+    islemturu: string;
+    cost: number;
 }
 
 interface ScopeStats {
@@ -134,6 +136,12 @@ const translations = {
         partner: "Partner",
         allPartners: "All Partners",
         others: "Others",
+        transType: "Trans. Type",
+        allTransTypes: "All Types",
+        cost: "Cost",
+        allCosts: "All Costs",
+        costPositive: "Cost > 0",
+        costZeroOrNeg: "Cost <= 0",
         total: "Total",
         errorTitle: "Error",
         errorLoadFailed: "Failed to load documents data.",
@@ -205,6 +213,12 @@ const translations = {
         partner: "Ortak",
         allPartners: "Tum Ortaklar",
         others: "Diger",
+        transType: "Islem Turu",
+        allTransTypes: "Tum Turler",
+        cost: "Maliyet",
+        allCosts: "Tum Maliyetler",
+        costPositive: "Maliyet > 0",
+        costZeroOrNeg: "Maliyet <= 0",
         total: "Toplam",
         errorTitle: "Hata",
         errorLoadFailed: "Belge verileri yuklenemedi.",
@@ -235,6 +249,8 @@ export default function IssuesPage() {
     const [tablePartnerFilter, setTablePartnerFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState<"all" | "missing" | "uploaded">("all");
     const [amountFilter, setAmountFilter] = useState<"all" | "above10k" | "5k-10k" | "below5k">("all");
+    const [transTypeFilter, setTransTypeFilter] = useState("all");
+    const [costFilter, setCostFilter] = useState<"all" | "positive" | "zeroOrNeg">("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -291,6 +307,8 @@ export default function IssuesPage() {
         setTablePartnerFilter("all");
         setStatusFilter("all");
         setAmountFilter("all");
+        setTransTypeFilter("all");
+        setCostFilter("all");
         setSearchQuery("");
         setDateFrom("");
         setDateTo("");
@@ -393,12 +411,13 @@ export default function IssuesPage() {
     }, [year, monthFilter, records, t]);
 
     // Get unique sources, projects, and partners from fetched records for table-level filters
-    const { sources, projects, partners } = useMemo(() => {
-        if (!records) return { sources: [], projects: [], partners: [] };
+    const { sources, projects, partners, transTypes } = useMemo(() => {
+        if (!records) return { sources: [], projects: [], partners: [], transTypes: [] };
         const s = [...new Set(records.map((r) => r.source))].filter(Boolean).sort();
         const p = [...new Set(records.map((r) => r.projekodu))].filter(Boolean).sort();
         const pt = [...new Set(records.map((r) => r.partner || ""))].sort();
-        return { sources: s, projects: p, partners: pt };
+        const tt = [...new Set(records.map((r) => r.islemturu || ""))].sort();
+        return { sources: s, projects: p, partners: pt, transTypes: tt };
     }, [records]);
 
     // Filter pipeline: records → table-level filters
@@ -443,6 +462,22 @@ export default function IssuesPage() {
             });
         }
 
+        // Transaction type filter
+        if (transTypeFilter !== "all") {
+            const tv = transTypeFilter === "__blank" ? "" : transTypeFilter;
+            filtered = filtered.filter((r) => (r.islemturu || "") === tv);
+        }
+
+        // Cost filter
+        if (costFilter !== "all") {
+            filtered = filtered.filter((r) => {
+                const c = Number(r.cost) || 0;
+                if (costFilter === "positive") return c > 0;
+                if (costFilter === "zeroOrNeg") return c <= 0;
+                return true;
+            });
+        }
+
         // Date range filter
         if (dateFrom) {
             filtered = filtered.filter((r) => r.date >= dateFrom);
@@ -462,7 +497,7 @@ export default function IssuesPage() {
         }
 
         return filtered;
-    }, [records, tableSourceFilter, tableProjectFilter, tablePartnerFilter, statusFilter, fileStatuses, amountFilter, dateFrom, dateTo, searchQuery]);
+    }, [records, tableSourceFilter, tableProjectFilter, tablePartnerFilter, statusFilter, fileStatuses, amountFilter, transTypeFilter, costFilter, dateFrom, dateTo, searchQuery]);
 
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
@@ -569,7 +604,7 @@ export default function IssuesPage() {
         }
     };
 
-    const hasTableFilters = tableSourceFilter !== "all" || tableProjectFilter !== "all" || tablePartnerFilter !== "all" || statusFilter !== "all" || amountFilter !== "all" || dateFrom || dateTo || searchQuery.trim();
+    const hasTableFilters = tableSourceFilter !== "all" || tableProjectFilter !== "all" || tablePartnerFilter !== "all" || statusFilter !== "all" || amountFilter !== "all" || transTypeFilter !== "all" || costFilter !== "all" || dateFrom || dateTo || searchQuery.trim();
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -851,6 +886,29 @@ export default function IssuesPage() {
                                     </SelectContent>
                                 </Select>
 
+                                <Select value={transTypeFilter} onValueChange={(v) => { setTransTypeFilter(v); setPage(0); }}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                        <SelectValue placeholder={t.transType} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">{t.allTransTypes}</SelectItem>
+                                        {transTypes.map((tt) => (
+                                            <SelectItem key={tt || "__blank"} value={tt || "__blank"}>{tt || "—"}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select value={costFilter} onValueChange={(v) => { setCostFilter(v as typeof costFilter); setPage(0); }}>
+                                    <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                                        <SelectValue placeholder={t.cost} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">{t.allCosts}</SelectItem>
+                                        <SelectItem value="positive">{t.costPositive}</SelectItem>
+                                        <SelectItem value="zeroOrNeg">{t.costZeroOrNeg}</SelectItem>
+                                    </SelectContent>
+                                </Select>
+
                                 {checkedAll && (
                                     <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setPage(0); }}>
                                         <SelectTrigger className="w-[130px] h-8 text-xs bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
@@ -958,6 +1016,8 @@ export default function IssuesPage() {
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.vendor}</th>
                                         <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden xl:table-cell">{t.description}</th>
                                         <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">{t.amount}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.transType}</th>
+                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.cost}</th>
                                         <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-20">{t.status}</th>
                                         <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-32">{t.action}</th>
                                     </tr>
@@ -995,6 +1055,16 @@ export default function IssuesPage() {
                                                 </td>
                                                 <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                                                     {formatCurrency(Number(record.usd_degeri) || 0)}
+                                                </td>
+                                                <td className="px-4 py-3 hidden lg:table-cell">
+                                                    {record.islemturu ? (
+                                                        <Badge variant="outline" className="text-xs font-mono">{record.islemturu}</Badge>
+                                                    ) : (
+                                                        <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap hidden lg:table-cell">
+                                                    {formatCurrency(Number(record.cost) || 0)}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     {status === undefined ? (
