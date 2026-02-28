@@ -111,6 +111,27 @@ npm run preview  # Build + local Workers preview
 npm run deploy   # Build + deploy to Cloudflare Workers
 ```
 
+## Deployment
+
+Deployment is **manual** — there is no CI/CD pipeline. Pushing to GitHub does NOT trigger a build or deploy. The full deploy process from the local machine is:
+
+```bash
+# 1. Commit and push to GitHub
+git add <files>
+git commit -m "message"
+git push
+
+# 2. Build and deploy to Cloudflare Workers (requires Hyperdrive connection string)
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://..." npm run deploy
+```
+
+The Hyperdrive connection string is required at build time because Next.js evaluates server components during the build. The value is stored in `.dev.vars` (git-ignored). Without it, the build will fail with a "no local hyperdrive connection string" error.
+
+`npm run deploy` runs `opennextjs-cloudflare build && opennextjs-cloudflare deploy` which:
+1. Builds the Next.js app with webpack
+2. Bundles it for Cloudflare Workers via OpenNext
+3. Uploads assets and the worker bundle via Wrangler
+
 ## Branches
 
 - `main` — Cloudflare Workers version (current)

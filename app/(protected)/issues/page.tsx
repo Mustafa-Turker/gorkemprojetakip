@@ -79,6 +79,7 @@ export default function IssuesPage() {
     const [sourceFilter, setSourceFilter] = useState("all");
     const [projectFilter, setProjectFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState<"all" | "missing" | "uploaded">("all");
+    const [amountFilter, setAmountFilter] = useState<"all" | "above10k" | "5k-10k" | "below5k">("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [page, setPage] = useState(0);
 
@@ -144,6 +145,17 @@ export default function IssuesPage() {
             });
         }
 
+        // Amount filter (values are negative: more negative = higher amount)
+        if (amountFilter !== "all") {
+            filtered = filtered.filter((r) => {
+                const v = Number(r.usd_degeri) || 0;
+                if (amountFilter === "above10k") return v <= -10000;
+                if (amountFilter === "5k-10k") return v > -10000 && v <= -5000;
+                if (amountFilter === "below5k") return v > -5000 && v <= 0;
+                return true;
+            });
+        }
+
         // Text search (uniquecode, carifirma, aciklama)
         if (searchQuery.trim()) {
             const q = searchQuery.trim().toLowerCase();
@@ -155,7 +167,7 @@ export default function IssuesPage() {
         }
 
         return filtered;
-    }, [records, monthFilter, statusFilter, fileStatuses, searchQuery]);
+    }, [records, monthFilter, statusFilter, fileStatuses, amountFilter, searchQuery]);
 
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
@@ -319,9 +331,11 @@ export default function IssuesPage() {
                             <SelectValue placeholder="Year" />
                         </SelectTrigger>
                         <SelectContent>
+                            <SelectItem value="2026">2026</SelectItem>
+                            <SelectItem value="2025">2025</SelectItem>
                             <SelectItem value="2024">2024</SelectItem>
                             <SelectItem value="2023">2023</SelectItem>
-                            <SelectItem value="2025">2025</SelectItem>
+                            <SelectItem value="2022">2022</SelectItem>
                         </SelectContent>
                     </Select>
 
@@ -382,6 +396,40 @@ export default function IssuesPage() {
                             </SelectContent>
                         </Select>
                     )}
+                </div>
+
+                {/* Quick filters */}
+                <div className="flex flex-wrap gap-2">
+                    {checkedAll && (
+                        <button
+                            onClick={() => { setStatusFilter(statusFilter === "missing" ? "all" : "missing"); setPage(0); }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                statusFilter === "missing"
+                                    ? "bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300"
+                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-rose-300 dark:hover:border-rose-700"
+                            }`}
+                        >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Show Missing
+                        </button>
+                    )}
+                    {([
+                        { key: "above10k" as const, label: "Above $10K" },
+                        { key: "5k-10k" as const, label: "$5K - $10K" },
+                        { key: "below5k" as const, label: "Below $5K" },
+                    ]).map(({ key, label }) => (
+                        <button
+                            key={key}
+                            onClick={() => { setAmountFilter(amountFilter === key ? "all" : key); setPage(0); }}
+                            className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                amountFilter === key
+                                    ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
+                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-indigo-300 dark:hover:border-indigo-700"
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
                 </div>
 
                 {/* Summary cards */}
