@@ -138,6 +138,9 @@ const translations = {
         others: "Others",
         urgent1: "Urgent 1",
         urgent2: "Urgent 2",
+        costPaymentOnly: "Show only Cost & Payment Related",
+        hq: "Head Office",
+        bag: "BAG",
         transType: "Trans. Type",
         allTransTypes: "All Types",
         cost: "Cost",
@@ -217,6 +220,9 @@ const translations = {
         others: "Diger",
         urgent1: "Acil 1",
         urgent2: "Acil 2",
+        costPaymentOnly: "Sadece Maliyet & Odeme ile Ilgili",
+        hq: "Merkez",
+        bag: "BAG",
         transType: "Islem Turu",
         allTransTypes: "Tum Turler",
         cost: "Maliyet",
@@ -278,6 +284,9 @@ export default function IssuesPage() {
     const [checkedAll, setCheckedAll] = useState(false);
     const [checkStats, setCheckStats] = useState<CheckStats | null>(null);
     const [checkProgress, setCheckProgress] = useState("");
+
+    // Card-level cost filter
+    const [cardCostOnly, setCardCostOnly] = useState(false);
 
     // Activity log
     const [activityLogOpen, setActivityLogOpen] = useState(false);
@@ -515,30 +524,45 @@ export default function IssuesPage() {
         return "OTHERS";
     };
 
-    // Metrics split by partner group — based on ALL fetched records (not filtered)
+    // Metrics split by partner group and source — based on ALL fetched records (not filtered)
     const metrics = useMemo(() => {
         const empty = { total: 0, checked: 0, missing: 0, uploaded: 0 };
-        if (!records) return { GORKEM: { ...empty }, RSCC: { ...empty }, OTHERS: { ...empty } };
+        const makeGroup = () => ({ hq: { ...empty }, bag: { ...empty }, all: { ...empty } });
+        if (!records) return { GORKEM: makeGroup(), RSCC: makeGroup(), OTHERS: makeGroup() };
 
-        const groups: Record<string, typeof empty> = {
-            GORKEM: { ...empty },
-            RSCC: { ...empty },
-            OTHERS: { ...empty },
+        const groups: Record<string, ReturnType<typeof makeGroup>> = {
+            GORKEM: makeGroup(),
+            RSCC: makeGroup(),
+            OTHERS: makeGroup(),
         };
 
         for (const r of records) {
+            if (cardCostOnly && (Number(r.cost) || 0) <= 0) continue;
             const g = getPartnerGroup(r.partner);
-            groups[g].total++;
+            // HQ source: ANK for GORKEM, ERB for RSCC, either for OTHERS
+            const src = r.source?.toUpperCase();
+            const isHQ = (g === "GORKEM" && src === "ANK") || (g === "RSCC" && src === "ERB") || (g === "OTHERS" && (src === "ANK" || src === "ERB"));
+            const isBAG = src === "BAG";
+            const bucket = isHQ ? "hq" : isBAG ? "bag" : "hq"; // default to hq for unknown
+
+            groups[g][bucket].total++;
+            groups[g].all.total++;
             const status = fileStatuses[r.doc];
             if (status !== undefined) {
-                groups[g].checked++;
-                if (status) groups[g].uploaded++;
-                else groups[g].missing++;
+                groups[g][bucket].checked++;
+                groups[g].all.checked++;
+                if (status) {
+                    groups[g][bucket].uploaded++;
+                    groups[g].all.uploaded++;
+                } else {
+                    groups[g][bucket].missing++;
+                    groups[g].all.missing++;
+                }
             }
         }
 
         return groups;
-    }, [records, fileStatuses]);
+    }, [records, fileStatuses, cardCostOnly]);
 
     // File selection handler
     const handleFileSelect = (file: File) => {
@@ -716,46 +740,71 @@ export default function IssuesPage() {
                 {/* Summary cards — based on ALL fetched records */}
                 {records && (
                     <div>
-                        {contextLabel && (
-                            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-3">
-                                {contextLabel}
-                            </p>
-                        )}
+                        <div className="flex items-center justify-between mb-3">
+                            {contextLabel && (
+                                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                                    {contextLabel}
+                                </p>
+                            )}
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={cardCostOnly}
+                                    onChange={(e) => setCardCostOnly(e.target.checked)}
+                                    className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">{t.costPaymentOnly}</span>
+                            </label>
+                        </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {([
                                 { label: t.totalRecords, key: "total" as const, color: "indigo" as const },
                                 { label: t.checked, key: "checked" as const, color: "amber" as const },
                                 { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
                             ]).map(({ label, key, color }) => {
-                                const totalAll = metrics.GORKEM[key] + metrics.RSCC[key] + metrics.OTHERS[key];
+                                const cols = [t.hq, t.bag, t.total];
+                                const gk = metrics.GORKEM;
+                                const rs = metrics.RSCC;
+                                const ot = metrics.OTHERS;
+                                const totalHQ = gk.hq[key] + rs.hq[key] + ot.hq[key];
+                                const totalBAG = gk.bag[key] + rs.bag[key] + ot.bag[key];
+                                const totalAll = gk.all[key] + rs.all[key] + ot.all[key];
                                 return (
                                     <SummaryCard
                                         key={key}
                                         label={label}
                                         color={color}
+                                        columns={cols}
                                         rows={[
-                                            { name: "GORKEM", value: metrics.GORKEM[key].toLocaleString() },
-                                            { name: "RSCC", value: metrics.RSCC[key].toLocaleString() },
-                                            { name: t.others, value: metrics.OTHERS[key].toLocaleString() },
-                                            { name: t.total, value: totalAll.toLocaleString(), bold: true },
+                                            { name: "GORKEM", values: [gk.hq[key].toLocaleString(), gk.bag[key].toLocaleString(), gk.all[key].toLocaleString()] },
+                                            { name: "RSCC", values: [rs.hq[key].toLocaleString(), rs.bag[key].toLocaleString(), rs.all[key].toLocaleString()] },
+                                            { name: t.others, values: [ot.hq[key].toLocaleString(), ot.bag[key].toLocaleString(), ot.all[key].toLocaleString()] },
+                                            { name: t.total, values: [totalHQ.toLocaleString(), totalBAG.toLocaleString(), totalAll.toLocaleString()], bold: true },
                                         ]}
                                     />
                                 );
                             })}
                             {(() => {
-                                const missingPct = (m: { missing: number; total: number }) =>
-                                    m.total > 0 ? `${Math.round((m.missing / m.total) * 100)}%` : "—";
-                                const totalMissing = metrics.GORKEM.missing + metrics.RSCC.missing + metrics.OTHERS.missing;
-                                const totalAll = metrics.GORKEM.total + metrics.RSCC.total + metrics.OTHERS.total;
+                                const pct = (m: number, tot: number) => tot > 0 ? `${Math.round((m / tot) * 100)}%` : "—";
+                                const gk = metrics.GORKEM;
+                                const rs = metrics.RSCC;
+                                const ot = metrics.OTHERS;
+                                const totalHQ = gk.hq.missing + rs.hq.missing + ot.hq.missing;
+                                const totalBAG = gk.bag.missing + rs.bag.missing + ot.bag.missing;
+                                const totalAll = gk.all.missing + rs.all.missing + ot.all.missing;
+                                const totalHQT = gk.hq.total + rs.hq.total + ot.hq.total;
+                                const totalBAGT = gk.bag.total + rs.bag.total + ot.bag.total;
+                                const totalAllT = gk.all.total + rs.all.total + ot.all.total;
                                 return (
                                     <SummaryCard
                                         label={t.missing}
                                         color="rose"
+                                        columns={[t.hq, t.bag, t.total]}
                                         rows={[
-                                            { name: "GORKEM", value: metrics.GORKEM.missing.toLocaleString(), suffix: missingPct(metrics.GORKEM) },
-                                            { name: "RSCC", value: metrics.RSCC.missing.toLocaleString(), suffix: missingPct(metrics.RSCC) },
-                                            { name: t.others, value: metrics.OTHERS.missing.toLocaleString(), suffix: missingPct(metrics.OTHERS) },
-                                            { name: t.total, value: totalMissing.toLocaleString(), bold: true, suffix: totalAll > 0 ? `${Math.round((totalMissing / totalAll) * 100)}%` : "—" },
+                                            { name: "GORKEM", values: [gk.hq.missing.toLocaleString(), gk.bag.missing.toLocaleString(), gk.all.missing.toLocaleString()], suffixes: [pct(gk.hq.missing, gk.hq.total), pct(gk.bag.missing, gk.bag.total), pct(gk.all.missing, gk.all.total)] },
+                                            { name: "RSCC", values: [rs.hq.missing.toLocaleString(), rs.bag.missing.toLocaleString(), rs.all.missing.toLocaleString()], suffixes: [pct(rs.hq.missing, rs.hq.total), pct(rs.bag.missing, rs.bag.total), pct(rs.all.missing, rs.all.total)] },
+                                            { name: t.others, values: [ot.hq.missing.toLocaleString(), ot.bag.missing.toLocaleString(), ot.all.missing.toLocaleString()], suffixes: [pct(ot.hq.missing, ot.hq.total), pct(ot.bag.missing, ot.bag.total), pct(ot.all.missing, ot.all.total)] },
+                                            { name: t.total, values: [totalHQ.toLocaleString(), totalBAG.toLocaleString(), totalAll.toLocaleString()], bold: true, suffixes: [pct(totalHQ, totalHQT), pct(totalBAG, totalBAGT), pct(totalAll, totalAllT)] },
                                         ]}
                                     />
                                 );
@@ -1312,10 +1361,11 @@ export default function IssuesPage() {
 }
 
 // Summary card with partner breakdown rows
-function SummaryCard({ label, color, rows }: {
+function SummaryCard({ label, color, columns, rows }: {
     label: string;
     color: "indigo" | "emerald" | "amber" | "rose";
-    rows: { name: string; value: string; bold?: boolean; suffix?: string }[];
+    columns: string[];
+    rows: { name: string; values: string[]; bold?: boolean; suffixes?: string[] }[];
 }) {
     const gradients = {
         indigo: "from-indigo-500 to-violet-600",
@@ -1328,14 +1378,23 @@ function SummaryCard({ label, color, rows }: {
         <div className="relative overflow-hidden rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm p-4">
             <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradients[color]}`} />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">{label}</p>
-            <div className="space-y-1">
+            {/* Column headers */}
+            <div className="flex items-center gap-1 mb-1">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 w-16 shrink-0" />
+                {columns.map((col) => (
+                    <span key={col} className="text-[10px] text-zinc-400 dark:text-zinc-500 flex-1 text-right">{col}</span>
+                ))}
+            </div>
+            <div className="space-y-0.5">
                 {rows.map((row) => (
-                    <div key={row.name} className={`flex items-center justify-between ${row.bold ? "border-t border-zinc-200 dark:border-zinc-800 pt-1 mt-1" : ""}`}>
-                        <span className={`text-xs ${row.bold ? "font-semibold text-zinc-700 dark:text-zinc-300" : "text-zinc-500 dark:text-zinc-400"}`}>{row.name}</span>
-                        <span className={`tabular-nums ${row.bold ? "text-base font-bold" : "text-sm font-medium"}`}>
-                            {row.value}
-                            {row.suffix && <span className="text-xs font-normal text-zinc-400 dark:text-zinc-500 ml-1">({row.suffix})</span>}
-                        </span>
+                    <div key={row.name} className={`flex items-center gap-1 ${row.bold ? "border-t border-zinc-200 dark:border-zinc-800 pt-1 mt-1" : ""}`}>
+                        <span className={`text-xs w-16 shrink-0 ${row.bold ? "font-semibold text-zinc-700 dark:text-zinc-300" : "text-zinc-500 dark:text-zinc-400"}`}>{row.name}</span>
+                        {row.values.map((val, i) => (
+                            <span key={i} className={`flex-1 text-right tabular-nums ${row.bold ? "text-sm font-bold" : "text-xs font-medium"}`}>
+                                {val}
+                                {row.suffixes?.[i] && <span className="text-[10px] font-normal text-zinc-400 dark:text-zinc-500 ml-0.5">({row.suffixes[i]})</span>}
+                            </span>
+                        ))}
                     </div>
                 ))}
             </div>
