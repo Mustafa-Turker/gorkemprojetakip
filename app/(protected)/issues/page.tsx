@@ -1097,21 +1097,55 @@ export default function IssuesPage() {
                         )}
                     </button>
                     {recentUploadsOpen && (
-                        <div className="p-4">
+                        <div className="p-0">
                             {recentUploads.length > 0 ? (
-                                <div className="max-h-64 overflow-y-auto space-y-1 text-xs font-mono">
-                                    {recentUploads.map((item, idx) => (
-                                        <div key={item.record.doc} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                            <span className="text-zinc-400 dark:text-zinc-500 w-6 text-right shrink-0">{idx + 1}</span>
-                                            <span className="text-zinc-500 dark:text-zinc-400 w-[72px] shrink-0">{formatDate(item.meta.createdDateTime)}</span>
-                                            <span className="font-semibold text-zinc-700 dark:text-zinc-300 w-[100px] shrink-0 truncate">{item.record.uniquecode}</span>
-                                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">{item.record.projekodu}</Badge>
-                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{item.record.source}</Badge>
-                                            <span className="text-zinc-600 dark:text-zinc-400 truncate flex-1 min-w-0">{item.record.carifirma}</span>
-                                            <span className="text-zinc-700 dark:text-zinc-300 w-[80px] text-right shrink-0">{formatCurrency(Math.abs(item.record.usd_degeri))}</span>
-                                            <span className="text-emerald-600 dark:text-emerald-400 w-[100px] text-right shrink-0 truncate">{item.meta.createdBy || "—"}</span>
-                                        </div>
-                                    ))}
+                                <div className="max-h-80 overflow-y-auto overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-800/50">
+                                            <tr className="border-b border-zinc-200 dark:border-zinc-800">
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400 w-8">#</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.created}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.code}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.project}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.source}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.partner}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.vendor}</th>
+                                                <th className="px-3 py-2 text-right font-medium text-zinc-500 dark:text-zinc-400">{t.amount}</th>
+                                                <th className="px-3 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.uploadedBy}</th>
+                                                <th className="px-3 py-2 text-center font-medium text-zinc-500 dark:text-zinc-400 w-10">{t.action}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {recentUploads.map((item, idx) => (
+                                                <tr key={item.record.doc} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                                                    <td className="px-3 py-2 text-zinc-400 dark:text-zinc-500 tabular-nums">{idx + 1}</td>
+                                                    <td className="px-3 py-2 tabular-nums whitespace-nowrap text-zinc-600 dark:text-zinc-400">{formatDate(item.meta.createdDateTime)}</td>
+                                                    <td className="px-3 py-2 font-mono whitespace-nowrap font-medium">{item.record.uniquecode}</td>
+                                                    <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{item.record.projekodu}</Badge></td>
+                                                    <td className="px-3 py-2"><Badge variant="secondary" className="text-[10px]">{item.record.source}</Badge></td>
+                                                    <td className="px-3 py-2">
+                                                        {item.record.partner ? (
+                                                            <Badge variant="outline" className="text-[10px]">{item.record.partner}</Badge>
+                                                        ) : (
+                                                            <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[180px] truncate text-zinc-600 dark:text-zinc-400">{item.record.carifirma}</td>
+                                                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatCurrency(Math.abs(item.record.usd_degeri))}</td>
+                                                    <td className="px-3 py-2 text-emerald-600 dark:text-emerald-400 max-w-[120px] truncate">{item.meta.createdBy || "—"}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <button
+                                                            onClick={() => handleViewFile(item.record)}
+                                                            className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
+                                                            title={t.fileDetails}
+                                                        >
+                                                            <Eye className="h-3 w-3" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             ) : (
                                 <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">
