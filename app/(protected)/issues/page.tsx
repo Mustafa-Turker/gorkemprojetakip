@@ -39,6 +39,7 @@ import {
     Download,
     FilterX,
     Eye,
+    Clock,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -177,6 +178,8 @@ const translations = {
         fileSize: "File Size",
         noPreview: "No preview available",
         openInSharePoint: "Open in SharePoint",
+        recentUploads: "Recently Uploaded Documents",
+        noUploadsYet: "No uploaded documents found yet",
     },
     tr: {
         title: "Belge Yonetimi",
@@ -270,6 +273,8 @@ const translations = {
         fileSize: "Dosya Boyutu",
         noPreview: "Onizleme mevcut degil",
         openInSharePoint: "SharePoint'te Ac",
+        recentUploads: "Son Yuklenen Belgeler",
+        noUploadsYet: "Henuz yuklenmis belge bulunamadi",
     },
 } as const;
 
@@ -338,6 +343,9 @@ export default function IssuesPage() {
 
     // Activity log
     const [activityLogOpen, setActivityLogOpen] = useState(false);
+
+    // Recent uploads
+    const [recentUploadsOpen, setRecentUploadsOpen] = useState(false);
 
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
@@ -572,6 +580,16 @@ export default function IssuesPage() {
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
     const pagedRecords = filteredRecords.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+    // Recent uploads — last 100 documents sorted by creation date desc
+    const recentUploads = useMemo(() => {
+        if (!records || !Object.keys(fileMetadata).length) return [];
+        return records
+            .filter(r => fileStatuses[r.doc] === true && fileMetadata[r.doc]?.createdDateTime)
+            .sort((a, b) => (fileMetadata[b.doc].createdDateTime || "").localeCompare(fileMetadata[a.doc].createdDateTime || ""))
+            .slice(0, 100)
+            .map(r => ({ record: r, meta: fileMetadata[r.doc] }));
+    }, [records, fileMetadata, fileStatuses]);
 
     // Helper to classify partner into group
     const getPartnerGroup = (partner: string) => {
@@ -1051,6 +1069,53 @@ export default function IssuesPage() {
                             ) : (
                                 <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">
                                     {t.noCheckYet}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Recently uploaded documents — collapsible */}
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                    <button
+                        onClick={() => setRecentUploadsOpen(!recentUploadsOpen)}
+                        className="w-full px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-emerald-500" />
+                            <h3 className="text-sm font-semibold">{t.recentUploads}</h3>
+                            {recentUploads.length > 0 && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                    {recentUploads.length}
+                                </Badge>
+                            )}
+                        </div>
+                        {recentUploadsOpen ? (
+                            <ChevronUp className="h-4 w-4 text-zinc-400" />
+                        ) : (
+                            <ChevronDown className="h-4 w-4 text-zinc-400" />
+                        )}
+                    </button>
+                    {recentUploadsOpen && (
+                        <div className="p-4">
+                            {recentUploads.length > 0 ? (
+                                <div className="max-h-64 overflow-y-auto space-y-1 text-xs font-mono">
+                                    {recentUploads.map((item, idx) => (
+                                        <div key={item.record.doc} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                            <span className="text-zinc-400 dark:text-zinc-500 w-6 text-right shrink-0">{idx + 1}</span>
+                                            <span className="text-zinc-500 dark:text-zinc-400 w-[72px] shrink-0">{formatDate(item.meta.createdDateTime)}</span>
+                                            <span className="font-semibold text-zinc-700 dark:text-zinc-300 w-[100px] shrink-0 truncate">{item.record.uniquecode}</span>
+                                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">{item.record.projekodu}</Badge>
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{item.record.source}</Badge>
+                                            <span className="text-zinc-600 dark:text-zinc-400 truncate flex-1 min-w-0">{item.record.carifirma}</span>
+                                            <span className="text-zinc-700 dark:text-zinc-300 w-[80px] text-right shrink-0">{formatCurrency(Math.abs(item.record.usd_degeri))}</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 w-[100px] text-right shrink-0 truncate">{item.meta.createdBy || "—"}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">
+                                    {t.noUploadsYet}
                                 </p>
                             )}
                         </div>
