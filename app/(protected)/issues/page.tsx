@@ -634,7 +634,7 @@ export default function IssuesPage() {
     const handleDownloadPdf = async () => {
         if (!filteredRecords.length) return;
         const { default: jsPDF } = await import("jspdf");
-        await import("jspdf-autotable");
+        const autoTable = (await import("jspdf-autotable")).default;
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
         // Header
@@ -660,10 +660,10 @@ export default function IssuesPage() {
             fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? "✓" : "✗",
         ]);
 
-        const totalAmt = filteredRecords.reduce((s, r) => s + (Number(r.usd_degeri) || 0), 0);
+        const totalAmt = filteredRecords.reduce((s, r) => s + Math.abs(Number(r.usd_degeri) || 0), 0);
         body.push(["", "", "", "", "", "", "", t.totalAmount, formatCurrency(totalAmt), "", "", ""]);
 
-        (doc as any).autoTable({
+        autoTable(doc, {
             head,
             body,
             startY: contextLabel ? 27 : 20,
@@ -1247,7 +1247,7 @@ export default function IssuesPage() {
                                 {/* Total amount */}
                                 {records && (
                                     <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap tabular-nums">
-                                        {t.totalAmount}: {formatCurrency(filteredRecords.reduce((s, r) => s + (Number(r.usd_degeri) || 0), 0))}
+                                        {t.totalAmount}: {formatCurrency(filteredRecords.reduce((s, r) => s + Math.abs(Number(r.usd_degeri) || 0), 0))}
                                     </span>
                                 )}
 
