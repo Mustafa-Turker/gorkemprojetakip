@@ -150,6 +150,9 @@ const translations = {
         urgent1: "Urgent 1",
         urgent2: "Urgent 2",
         costPaymentOnly: "Show only Cost & Payment Related",
+        showAsTotalAmounts: "Show as Total Amounts",
+        totalAmount: "Total Amount",
+        downloadPdf: "Download PDF",
         hq: "Head Office",
         bag: "BAG",
         transType: "Trans. Type",
@@ -240,6 +243,9 @@ const translations = {
         urgent1: "Acil 1",
         urgent2: "Acil 2",
         costPaymentOnly: "Sadece Maliyet & Odeme ile Ilgili",
+        showAsTotalAmounts: "Toplam Tutar Olarak Goster",
+        totalAmount: "Toplam Tutar",
+        downloadPdf: "PDF Indir",
         hq: "Merkez",
         bag: "BAG",
         transType: "Islem Turu",
@@ -271,6 +277,12 @@ type Lang = keyof typeof translations;
 
 const PAGE_SIZE = 50;
 const BATCH_SIZE = 10000;
+
+function fmtCompact(v: number): string {
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+    return `$${v.toFixed(0)}`;
+}
 
 export default function IssuesPage() {
     const [lang, setLang] = useState<Lang>("en");
@@ -314,6 +326,7 @@ export default function IssuesPage() {
 
     // Card-level cost filter
     const [cardCostOnly, setCardCostOnly] = useState(false);
+    const [cardShowAmounts, setCardShowAmounts] = useState(false);
 
     // File metadata from SharePoint check
     const [fileMetadata, setFileMetadata] = useState<Record<string, FileMetadata>>({});
@@ -570,7 +583,7 @@ export default function IssuesPage() {
 
     // Metrics split by partner group and source — based on ALL fetched records (not filtered)
     const metrics = useMemo(() => {
-        const empty = { total: 0, checked: 0, missing: 0, uploaded: 0 };
+        const empty = { total: 0, checked: 0, missing: 0, uploaded: 0, totalAmt: 0, checkedAmt: 0, missingAmt: 0, uploadedAmt: 0 };
         const makeGroup = () => ({ hq: { ...empty }, bag: { ...empty }, all: { ...empty } });
         if (!records) return { GORKEM: makeGroup(), RSCC: makeGroup(), OTHERS: makeGroup() };
 
@@ -589,24 +602,90 @@ export default function IssuesPage() {
             const isBAG = src === "BAG";
             const bucket = isHQ ? "hq" : isBAG ? "bag" : "hq"; // default to hq for unknown
 
+            const amt = Math.abs(Number(r.usd_degeri) || 0);
             groups[g][bucket].total++;
             groups[g].all.total++;
+            groups[g][bucket].totalAmt += amt;
+            groups[g].all.totalAmt += amt;
             const status = fileStatuses[r.doc];
             if (status !== undefined) {
                 groups[g][bucket].checked++;
                 groups[g].all.checked++;
+                groups[g][bucket].checkedAmt += amt;
+                groups[g].all.checkedAmt += amt;
                 if (status) {
                     groups[g][bucket].uploaded++;
                     groups[g].all.uploaded++;
+                    groups[g][bucket].uploadedAmt += amt;
+                    groups[g].all.uploadedAmt += amt;
                 } else {
                     groups[g][bucket].missing++;
                     groups[g].all.missing++;
+                    groups[g][bucket].missingAmt += amt;
+                    groups[g].all.missingAmt += amt;
                 }
             }
         }
 
         return groups;
     }, [records, fileStatuses, cardCostOnly]);
+
+    // PDF download handler
+    const handleDownloadPdf = async () => {
+        if (!filteredRecords.length) return;
+        const { default: jsPDF } = await import("jspdf");
+        await import("jspdf-autotable");
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+        // Header
+        doc.setFontSize(14);
+        doc.text(t.title, 14, 15);
+        doc.setFontSize(10);
+        if (contextLabel) doc.text(contextLabel, 14, 22);
+
+        // Table
+        const head = [["#", t.date, t.code, t.project, t.source, t.partner, t.vendor, t.description, t.amount, t.transType, t.cost, t.status]];
+        const body = filteredRecords.map((r, i) => [
+            i + 1,
+            formatDate(r.date),
+            r.uniquecode,
+            r.projekodu,
+            r.source,
+            r.partner || "—",
+            r.carifirma || "",
+            r.aciklama || "",
+            formatCurrency(Number(r.usd_degeri) || 0),
+            r.islemturu || "—",
+            Number(r.cost) || 0,
+            fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? "✓" : "✗",
+        ]);
+
+        const totalAmt = filteredRecords.reduce((s, r) => s + (Number(r.usd_degeri) || 0), 0);
+        body.push(["", "", "", "", "", "", "", t.totalAmount, formatCurrency(totalAmt), "", "", ""]);
+
+        (doc as any).autoTable({
+            head,
+            body,
+            startY: contextLabel ? 27 : 20,
+            styles: { fontSize: 7, cellPadding: 1.5 },
+            headStyles: { fillColor: [63, 63, 70], fontSize: 7 },
+            columnStyles: {
+                0: { cellWidth: 8 },
+                7: { cellWidth: 40 },
+                8: { halign: "right" },
+                10: { halign: "right" },
+            },
+            didParseCell: (data: any) => {
+                // Bold the total row
+                if (data.row.index === body.length - 1) {
+                    data.cell.styles.fontStyle = "bold";
+                }
+            },
+        });
+
+        const filename = `documents-${year}${monthFilter !== "all" ? `-${monthFilter.padStart(2, "0")}` : ""}.pdf`;
+        doc.save(filename);
+    };
 
     // File selection handler
     const handleFileSelect = (file: File) => {
@@ -826,29 +905,42 @@ export default function IssuesPage() {
                                     {contextLabel}
                                 </p>
                             )}
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={cardCostOnly}
-                                    onChange={(e) => setCardCostOnly(e.target.checked)}
-                                    className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                                />
-                                <span className="text-xs text-zinc-500 dark:text-zinc-400">{t.costPaymentOnly}</span>
-                            </label>
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={cardCostOnly}
+                                        onChange={(e) => setCardCostOnly(e.target.checked)}
+                                        className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                    />
+                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">{t.costPaymentOnly}</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={cardShowAmounts}
+                                        onChange={(e) => setCardShowAmounts(e.target.checked)}
+                                        className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                    />
+                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">{t.showAsTotalAmounts}</span>
+                                </label>
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {([
-                                { label: t.totalRecords, key: "total" as const, color: "indigo" as const },
-                                { label: t.checked, key: "checked" as const, color: "amber" as const },
-                                { label: t.uploaded, key: "uploaded" as const, color: "emerald" as const },
-                            ]).map(({ label, key, color }) => {
+                                { label: t.totalRecords, key: "total" as const, amtKey: "totalAmt" as const, color: "indigo" as const },
+                                { label: t.checked, key: "checked" as const, amtKey: "checkedAmt" as const, color: "amber" as const },
+                                { label: t.uploaded, key: "uploaded" as const, amtKey: "uploadedAmt" as const, color: "emerald" as const },
+                            ]).map(({ label, key, amtKey, color }) => {
                                 const cols = [t.hq, t.bag, t.total];
                                 const gk = metrics.GORKEM;
                                 const rs = metrics.RSCC;
                                 const ot = metrics.OTHERS;
-                                const totalHQ = gk.hq[key] + rs.hq[key] + ot.hq[key];
-                                const totalBAG = gk.bag[key] + rs.bag[key] + ot.bag[key];
-                                const totalAll = gk.all[key] + rs.all[key] + ot.all[key];
+                                const k = cardShowAmounts ? amtKey : key;
+                                const totalHQ = gk.hq[k] + rs.hq[k] + ot.hq[k];
+                                const totalBAG = gk.bag[k] + rs.bag[k] + ot.bag[k];
+                                const totalAll = gk.all[k] + rs.all[k] + ot.all[k];
+                                const fmt = cardShowAmounts ? fmtCompact : (v: number) => v.toLocaleString();
                                 return (
                                     <SummaryCard
                                         key={key}
@@ -856,10 +948,10 @@ export default function IssuesPage() {
                                         color={color}
                                         columns={cols}
                                         rows={[
-                                            { name: "GORKEM", values: [gk.hq[key].toLocaleString(), gk.bag[key].toLocaleString(), gk.all[key].toLocaleString()] },
-                                            { name: "RSCC", values: [rs.hq[key].toLocaleString(), rs.bag[key].toLocaleString(), rs.all[key].toLocaleString()] },
-                                            { name: t.others, values: [ot.hq[key].toLocaleString(), ot.bag[key].toLocaleString(), ot.all[key].toLocaleString()] },
-                                            { name: t.total, values: [totalHQ.toLocaleString(), totalBAG.toLocaleString(), totalAll.toLocaleString()], bold: true },
+                                            { name: "GORKEM", values: [fmt(gk.hq[k]), fmt(gk.bag[k]), fmt(gk.all[k])] },
+                                            { name: "RSCC", values: [fmt(rs.hq[k]), fmt(rs.bag[k]), fmt(rs.all[k])] },
+                                            { name: t.others, values: [fmt(ot.hq[k]), fmt(ot.bag[k]), fmt(ot.all[k])] },
+                                            { name: t.total, values: [fmt(totalHQ), fmt(totalBAG), fmt(totalAll)], bold: true },
                                         ]}
                                     />
                                 );
@@ -869,22 +961,25 @@ export default function IssuesPage() {
                                 const gk = metrics.GORKEM;
                                 const rs = metrics.RSCC;
                                 const ot = metrics.OTHERS;
-                                const totalHQ = gk.hq.missing + rs.hq.missing + ot.hq.missing;
-                                const totalBAG = gk.bag.missing + rs.bag.missing + ot.bag.missing;
-                                const totalAll = gk.all.missing + rs.all.missing + ot.all.missing;
-                                const totalHQT = gk.hq.total + rs.hq.total + ot.hq.total;
-                                const totalBAGT = gk.bag.total + rs.bag.total + ot.bag.total;
-                                const totalAllT = gk.all.total + rs.all.total + ot.all.total;
+                                const mk = cardShowAmounts ? "missingAmt" as const : "missing" as const;
+                                const tk = cardShowAmounts ? "totalAmt" as const : "total" as const;
+                                const fmt = cardShowAmounts ? fmtCompact : (v: number) => v.toLocaleString();
+                                const totalHQ = gk.hq[mk] + rs.hq[mk] + ot.hq[mk];
+                                const totalBAG = gk.bag[mk] + rs.bag[mk] + ot.bag[mk];
+                                const totalAll = gk.all[mk] + rs.all[mk] + ot.all[mk];
+                                const totalHQT = gk.hq[tk] + rs.hq[tk] + ot.hq[tk];
+                                const totalBAGT = gk.bag[tk] + rs.bag[tk] + ot.bag[tk];
+                                const totalAllT = gk.all[tk] + rs.all[tk] + ot.all[tk];
                                 return (
                                     <SummaryCard
                                         label={t.missing}
                                         color="rose"
                                         columns={[t.hq, t.bag, t.total]}
                                         rows={[
-                                            { name: "GORKEM", values: [gk.hq.missing.toLocaleString(), gk.bag.missing.toLocaleString(), gk.all.missing.toLocaleString()], suffixes: [pct(gk.hq.missing, gk.hq.total), pct(gk.bag.missing, gk.bag.total), pct(gk.all.missing, gk.all.total)] },
-                                            { name: "RSCC", values: [rs.hq.missing.toLocaleString(), rs.bag.missing.toLocaleString(), rs.all.missing.toLocaleString()], suffixes: [pct(rs.hq.missing, rs.hq.total), pct(rs.bag.missing, rs.bag.total), pct(rs.all.missing, rs.all.total)] },
-                                            { name: t.others, values: [ot.hq.missing.toLocaleString(), ot.bag.missing.toLocaleString(), ot.all.missing.toLocaleString()], suffixes: [pct(ot.hq.missing, ot.hq.total), pct(ot.bag.missing, ot.bag.total), pct(ot.all.missing, ot.all.total)] },
-                                            { name: t.total, values: [totalHQ.toLocaleString(), totalBAG.toLocaleString(), totalAll.toLocaleString()], bold: true, suffixes: [pct(totalHQ, totalHQT), pct(totalBAG, totalBAGT), pct(totalAll, totalAllT)] },
+                                            { name: "GORKEM", values: [fmt(gk.hq[mk]), fmt(gk.bag[mk]), fmt(gk.all[mk])], suffixes: [pct(gk.hq[mk], gk.hq[tk]), pct(gk.bag[mk], gk.bag[tk]), pct(gk.all[mk], gk.all[tk])] },
+                                            { name: "RSCC", values: [fmt(rs.hq[mk]), fmt(rs.bag[mk]), fmt(rs.all[mk])], suffixes: [pct(rs.hq[mk], rs.hq[tk]), pct(rs.bag[mk], rs.bag[tk]), pct(rs.all[mk], rs.all[tk])] },
+                                            { name: t.others, values: [fmt(ot.hq[mk]), fmt(ot.bag[mk]), fmt(ot.all[mk])], suffixes: [pct(ot.hq[mk], ot.hq[tk]), pct(ot.bag[mk], ot.bag[tk]), pct(ot.all[mk], ot.all[tk])] },
+                                            { name: t.total, values: [fmt(totalHQ), fmt(totalBAG), fmt(totalAll)], bold: true, suffixes: [pct(totalHQ, totalHQT), pct(totalBAG, totalBAGT), pct(totalAll, totalAllT)] },
                                         ]}
                                     />
                                 );
@@ -1147,6 +1242,26 @@ export default function IssuesPage() {
                                     <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
                                         {t.filtered}: {filteredRecords.length} / {records.length}
                                     </span>
+                                )}
+
+                                {/* Total amount */}
+                                {records && (
+                                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap tabular-nums">
+                                        {t.totalAmount}: {formatCurrency(filteredRecords.reduce((s, r) => s + (Number(r.usd_degeri) || 0), 0))}
+                                    </span>
+                                )}
+
+                                {/* PDF download */}
+                                {records && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs gap-1"
+                                        onClick={handleDownloadPdf}
+                                    >
+                                        <Download className="h-3.5 w-3.5" />
+                                        {t.downloadPdf}
+                                    </Button>
                                 )}
 
                                 {/* Search */}
