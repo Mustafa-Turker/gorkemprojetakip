@@ -725,8 +725,8 @@ export default function UploadPage() {
                                 ) : records.map((record) => {
                                     const status = fileStatuses[record.doc];
                                     const isSelected = selectedRecord?.uniquecode === record.uniquecode;
-                                    const giris = Number(record.giris_tutar) || 0;
-                                    const cikis = Number(record.cikis_tutar) || 0;
+                                    const giris = Math.abs(Number(record.giris_tutar) || 0);
+                                    const cikis = Math.abs(Number(record.cikis_tutar) || 0);
                                     const currency = record.parabirimi || "";
                                     return (
                                         <div
@@ -813,14 +813,14 @@ export default function UploadPage() {
                                         <p className="font-mono text-sm font-semibold">{selectedRecord.uniquecode}</p>
                                         <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">{selectedRecord.carifirma}</p>
                                         <div className="flex items-center gap-3 mt-1">
-                                            {(Number(selectedRecord.giris_tutar) || 0) > 0 && (
+                                            {Math.abs(Number(selectedRecord.giris_tutar) || 0) > 0 && (
                                                 <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                                                    {t.giris}: {(Number(selectedRecord.giris_tutar)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
+                                                    {t.giris}: {Math.abs(Number(selectedRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
                                                 </span>
                                             )}
-                                            {(Number(selectedRecord.cikis_tutar) || 0) > 0 && (
+                                            {Math.abs(Number(selectedRecord.cikis_tutar) || 0) > 0 && (
                                                 <span className="text-xs font-semibold tabular-nums text-rose-600 dark:text-rose-400">
-                                                    {t.cikis}: {(Number(selectedRecord.cikis_tutar)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
+                                                    {t.cikis}: {Math.abs(Number(selectedRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
                                                 </span>
                                             )}
                                         </div>
@@ -1025,12 +1025,12 @@ export default function UploadPage() {
 
                                     <span className="text-zinc-500 font-medium">{t.giris}</span>
                                     <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                                        {(Number(viewDetailRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
+                                        {Math.abs(Number(viewDetailRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
                                     </span>
 
                                     <span className="text-zinc-500 font-medium">{t.cikis}</span>
                                     <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
-                                        {(Number(viewDetailRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
+                                        {Math.abs(Number(viewDetailRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
                                     </span>
                                 </div>
                                 <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
