@@ -659,25 +659,37 @@ export default function IssuesPage() {
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
         // Load a Unicode-compatible font for Turkish characters
+        // DejaVu Sans TTF from npm — guaranteed real TTF format
+        let fontLoaded = false;
         try {
-            const fontResp = await fetch("https://cdn.jsdelivr.net/fontsource/fonts/noto-sans@latest/latin-ext-400-normal.ttf");
+            const fontResp = await fetch("https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf");
             if (fontResp.ok) {
                 const fontBuf = await fontResp.arrayBuffer();
-                // Chunked base64 conversion to avoid stack overflow
                 const bytes = new Uint8Array(fontBuf);
-                let binary = "";
-                const chunkSize = 8192;
-                for (let i = 0; i < bytes.length; i += chunkSize) {
-                    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+                // Verify it's a real TTF (starts with 0x00010000 or 0x74727565)
+                if (bytes.length > 4 && (bytes[0] === 0x00 || bytes[0] === 0x74)) {
+                    let binary = "";
+                    const chunkSize = 8192;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+                    }
+                    const fontBase64 = btoa(binary);
+                    doc.addFileToVFS("DejaVuSans.ttf", fontBase64);
+                    doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
+                    doc.addFileToVFS("DejaVuSans-Bold.ttf", fontBase64);
+                    doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
+                    doc.setFont("DejaVuSans");
+                    fontLoaded = true;
                 }
-                const fontBase64 = btoa(binary);
-                doc.addFileToVFS("NotoSans-Regular.ttf", fontBase64);
-                doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
-                doc.addFileToVFS("NotoSans-Bold.ttf", fontBase64);
-                doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
-                doc.setFont("NotoSans");
             }
-        } catch { /* fallback to default font */ }
+        } catch { /* fallback below */ }
+        // Fallback: replace Turkish chars with ASCII equivalents
+        const sanitize = (s: string) => {
+            if (fontLoaded) return s;
+            return s.replace(/ş/g,"s").replace(/Ş/g,"S").replace(/ğ/g,"g").replace(/Ğ/g,"G")
+                    .replace(/ı/g,"i").replace(/İ/g,"I").replace(/ç/g,"c").replace(/Ç/g,"C")
+                    .replace(/ö/g,"o").replace(/Ö/g,"O").replace(/ü/g,"u").replace(/Ü/g,"U");
+        };
 
         // Status labels
         const statusUploaded = lang === "tr" ? "Yuklu" : "Uploaded";
@@ -687,12 +699,12 @@ export default function IssuesPage() {
 
         // Header
         doc.setFontSize(14);
-        doc.text(t.title, 14, 15);
+        doc.text(sanitize(t.title), 14, 15);
         doc.setFontSize(10);
-        if (contextLabel) doc.text(contextLabel, 14, 22);
+        if (contextLabel) doc.text(sanitize(contextLabel), 14, 22);
 
         // Table — use giris/cikis/parabirimi instead of USD and remove Cost column
-        const head = [["#", t.date, t.code, t.project, t.source, t.partner, t.vendor, t.description, girisLabel, cikisLabel, t.transType, t.status]];
+        const head = [["#", sanitize(t.date), sanitize(t.code), sanitize(t.project), sanitize(t.source), sanitize(t.partner), sanitize(t.vendor), sanitize(t.description), sanitize(girisLabel), sanitize(cikisLabel), sanitize(t.transType), sanitize(t.status)]];
         const body = filteredRecords.map((r, i) => {
             const giris = Math.abs(Number(r.giris_tutar) || 0);
             const cikis = Math.abs(Number(r.cikis_tutar) || 0);
@@ -704,8 +716,8 @@ export default function IssuesPage() {
                 r.projekodu,
                 r.source,
                 r.partner || "-",
-                r.carifirma || "",
-                r.aciklama || "",
+                sanitize(r.carifirma || ""),
+                sanitize(r.aciklama || ""),
                 giris > 0 ? `${giris.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : "-",
                 cikis > 0 ? `${cikis.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : "-",
                 r.islemturu || "-",
@@ -715,11 +727,12 @@ export default function IssuesPage() {
 
         body.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
 
+        const fontName = fontLoaded ? "DejaVuSans" : "helvetica";
         autoTable(doc, {
             head,
             body,
             startY: contextLabel ? 27 : 20,
-            styles: { fontSize: 7, cellPadding: 1.5, font: "NotoSans" },
+            styles: { fontSize: 7, cellPadding: 1.5, font: fontName },
             headStyles: { fillColor: [63, 63, 70], fontSize: 7 },
             columnStyles: {
                 0: { cellWidth: 8 },
