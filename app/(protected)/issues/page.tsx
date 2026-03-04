@@ -54,6 +54,9 @@ interface DocumentRecord {
     partner: string;
     islemturu: string;
     cost: number;
+    giris_tutar: number;
+    cikis_tutar: number;
+    parabirimi: string;
 }
 
 interface ScopeStats {
@@ -660,7 +663,14 @@ export default function IssuesPage() {
             const fontResp = await fetch("https://cdn.jsdelivr.net/fontsource/fonts/noto-sans@latest/latin-ext-400-normal.ttf");
             if (fontResp.ok) {
                 const fontBuf = await fontResp.arrayBuffer();
-                const fontBase64 = btoa(String.fromCharCode(...new Uint8Array(fontBuf)));
+                // Chunked base64 conversion to avoid stack overflow
+                const bytes = new Uint8Array(fontBuf);
+                let binary = "";
+                const chunkSize = 8192;
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+                }
+                const fontBase64 = btoa(binary);
                 doc.addFileToVFS("NotoSans-Regular.ttf", fontBase64);
                 doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
                 doc.addFileToVFS("NotoSans-Bold.ttf", fontBase64);
@@ -672,6 +682,8 @@ export default function IssuesPage() {
         // Status labels
         const statusUploaded = lang === "tr" ? "Yuklu" : "Uploaded";
         const statusMissing = lang === "tr" ? "Eksik" : "Missing";
+        const girisLabel = lang === "tr" ? "Giris" : "In";
+        const cikisLabel = lang === "tr" ? "Cikis" : "Out";
 
         // Header
         doc.setFontSize(14);
@@ -679,25 +691,29 @@ export default function IssuesPage() {
         doc.setFontSize(10);
         if (contextLabel) doc.text(contextLabel, 14, 22);
 
-        // Table
-        const head = [["#", t.date, t.code, t.project, t.source, t.partner, t.vendor, t.description, t.amount, t.transType, t.cost, t.status]];
-        const body = filteredRecords.map((r, i) => [
-            i + 1,
-            formatDate(r.date),
-            r.uniquecode,
-            r.projekodu,
-            r.source,
-            r.partner || "-",
-            r.carifirma || "",
-            r.aciklama || "",
-            formatCurrency(Number(r.usd_degeri) || 0),
-            r.islemturu || "-",
-            Number(r.cost) || 0,
-            fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? statusUploaded : statusMissing,
-        ]);
+        // Table — use giris/cikis/parabirimi instead of USD and remove Cost column
+        const head = [["#", t.date, t.code, t.project, t.source, t.partner, t.vendor, t.description, girisLabel, cikisLabel, t.transType, t.status]];
+        const body = filteredRecords.map((r, i) => {
+            const giris = Math.abs(Number(r.giris_tutar) || 0);
+            const cikis = Math.abs(Number(r.cikis_tutar) || 0);
+            const cur = r.parabirimi || "";
+            return [
+                i + 1,
+                formatDate(r.date),
+                r.uniquecode,
+                r.projekodu,
+                r.source,
+                r.partner || "-",
+                r.carifirma || "",
+                r.aciklama || "",
+                giris > 0 ? `${giris.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : "-",
+                cikis > 0 ? `${cikis.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : "-",
+                r.islemturu || "-",
+                fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? statusUploaded : statusMissing,
+            ];
+        });
 
-        const totalAmt = filteredRecords.reduce((s, r) => s + Math.abs(Number(r.usd_degeri) || 0), 0);
-        body.push(["", "", "", "", "", "", "", t.totalAmount, formatCurrency(totalAmt), "", "", ""]);
+        body.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
 
         autoTable(doc, {
             head,
@@ -707,16 +723,16 @@ export default function IssuesPage() {
             headStyles: { fillColor: [63, 63, 70], fontSize: 7 },
             columnStyles: {
                 0: { cellWidth: 8 },
-                7: { cellWidth: 40 },
+                7: { cellWidth: 35 },
                 8: { halign: "right" },
-                10: { halign: "right" },
+                9: { halign: "right" },
             },
             didParseCell: (data: any) => {
                 // Bold the total row
                 if (data.row.index === body.length - 1) {
                     data.cell.styles.fontStyle = "bold";
                 }
-                // Color the status column
+                // Color the status column (index 11)
                 if (data.column.index === 11 && data.section === "body" && data.row.index < body.length - 1) {
                     const val = data.cell.raw;
                     if (val === statusMissing) {
