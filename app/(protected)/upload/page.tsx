@@ -235,6 +235,8 @@ export default function UploadPage() {
     const [totalPages, setTotalPages] = useState(0);
     const [pageRangeInput, setPageRangeInput] = useState("");
     const [selectedPages, setSelectedPages] = useState<number[]>([]);
+    const [pageThumbnails, setPageThumbnails] = useState<string[]>([]);
+    const [renderingThumbnails, setRenderingThumbnails] = useState(false);
 
     // Upload state
     const [uploading, setUploading] = useState(false);
@@ -354,12 +356,13 @@ export default function UploadPage() {
         }
     }, [year, month, day, runCheck]);
 
-    // Handle PDF load
+    // Handle PDF load — get page count with pdf-lib, render thumbnails with pdfjs-dist
     const handlePdfLoad = useCallback(async (file: File) => {
         setPdfFile(file);
         setPageRangeInput("");
         setSelectedPages([]);
         setUploadResult(null);
+        setPageThumbnails([]);
 
         const buffer = await file.arrayBuffer();
         setPdfArrayBuffer(buffer);
@@ -367,7 +370,32 @@ export default function UploadPage() {
         try {
             const { PDFDocument } = await import("pdf-lib");
             const src = await PDFDocument.load(buffer);
-            setTotalPages(src.getPageCount());
+            const count = src.getPageCount();
+            setTotalPages(count);
+
+            // Render thumbnails with pdfjs-dist
+            setRenderingThumbnails(true);
+            try {
+                const pdfjsLib = await import("pdfjs-dist");
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+                const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+                const thumbs: string[] = [];
+                for (let i = 1; i <= count; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale: 0.4 });
+                    const canvas = document.createElement("canvas");
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext("2d")!;
+                    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+                    thumbs.push(canvas.toDataURL("image/jpeg", 0.7));
+                }
+                setPageThumbnails(thumbs);
+            } catch (renderErr) {
+                console.error("Thumbnail render error:", renderErr);
+            } finally {
+                setRenderingThumbnails(false);
+            }
         } catch {
             setError("Failed to read PDF file");
             setPdfFile(null);
@@ -383,6 +411,8 @@ export default function UploadPage() {
         setTotalPages(0);
         setPageRangeInput("");
         setSelectedPages([]);
+        setPageThumbnails([]);
+        setRenderingThumbnails(false);
         setUploadResult(null);
     }, []);
 
@@ -426,6 +456,27 @@ export default function UploadPage() {
             setUploading(false);
         }
     }, [selectedRecord, pdfArrayBuffer, selectedPages, t.uploaded]);
+
+    // Toggle a page from thumbnail click (updates text input to stay synced)
+    const togglePage = useCallback((pageIdx: number) => {
+        setSelectedPages(prev => {
+            const next = prev.includes(pageIdx)
+                ? prev.filter(p => p !== pageIdx)
+                : [...prev, pageIdx].sort((a, b) => a - b);
+            // Build compact range string from the new selection
+            const ranges: string[] = [];
+            let i = 0;
+            while (i < next.length) {
+                const start = next[i];
+                let end = start;
+                while (i + 1 < next.length && next[i + 1] === end + 1) { end = next[++i]; }
+                ranges.push(start === end ? String(start + 1) : `${start + 1}-${end + 1}`);
+                i++;
+            }
+            setPageRangeInput(ranges.join(", "));
+            return next;
+        });
+    }, []);
 
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -736,22 +787,68 @@ export default function UploadPage() {
                                     </button>
                                 )}
 
-                                {/* Page range selector */}
+                                {/* Page thumbnails grid */}
                                 {totalPages > 0 && (
                                     <div className="space-y-2">
-                                        <label className="text-sm font-medium">{t.pageRange}</label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-sm font-medium">{t.pageRange}</label>
+                                            <p className="text-xs text-zinc-500">
+                                                {selectedPages.length > 0
+                                                    ? `${selectedPages.length} ${t.of} ${totalPages} ${t.pagesSelected}`
+                                                    : `0 ${t.of} ${totalPages} ${t.pagesSelected}`
+                                                }
+                                            </p>
+                                        </div>
                                         <Input
                                             value={pageRangeInput}
                                             onChange={e => setPageRangeInput(e.target.value)}
                                             placeholder={t.pageRangeHint}
                                             className="h-9"
                                         />
-                                        <p className="text-xs text-zinc-500">
-                                            {selectedPages.length > 0
-                                                ? `${selectedPages.length} ${t.of} ${totalPages} ${t.pagesSelected}: ${selectedPages.map(p => p + 1).join(", ")}`
-                                                : `0 ${t.of} ${totalPages} ${t.pagesSelected}`
-                                            }
-                                        </p>
+                                        {renderingThumbnails ? (
+                                            <div className="flex items-center justify-center gap-2 py-8 text-zinc-400">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                <span className="text-xs">Rendering pages...</span>
+                                            </div>
+                                        ) : pageThumbnails.length > 0 && (
+                                            <div className="grid grid-cols-4 gap-2 max-h-[400px] overflow-y-auto p-1">
+                                                {pageThumbnails.map((thumb, idx) => {
+                                                    const isPageSelected = selectedPages.includes(idx);
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            onClick={() => togglePage(idx)}
+                                                            className={cn(
+                                                                "relative cursor-pointer rounded-md border-2 overflow-hidden transition-all hover:shadow-md",
+                                                                isPageSelected
+                                                                    ? "border-indigo-500 ring-2 ring-indigo-500/30 shadow-md"
+                                                                    : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500"
+                                                            )}
+                                                        >
+                                                            <img
+                                                                src={thumb}
+                                                                alt={`Page ${idx + 1}`}
+                                                                className="w-full h-auto"
+                                                                draggable={false}
+                                                            />
+                                                            <div className={cn(
+                                                                "absolute bottom-0 left-0 right-0 text-center text-[10px] font-semibold py-0.5",
+                                                                isPageSelected
+                                                                    ? "bg-indigo-500 text-white"
+                                                                    : "bg-zinc-900/60 text-white"
+                                                            )}>
+                                                                {idx + 1}
+                                                            </div>
+                                                            {isPageSelected && (
+                                                                <div className="absolute top-1 right-1">
+                                                                    <CheckCircle2 className="h-4 w-4 text-indigo-500 drop-shadow-md" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
