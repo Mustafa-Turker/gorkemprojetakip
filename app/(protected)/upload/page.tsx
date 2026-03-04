@@ -801,6 +801,55 @@ export default function UploadPage() {
                         <div className="lg:w-[60%] lg:sticky lg:top-20 lg:self-start space-y-4">
                             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-5 space-y-5">
 
+                                {/* PDF drop zone — compact when file loaded */}
+                                <div
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={cn(
+                                        "border-2 border-dashed rounded-lg text-center cursor-pointer transition-all",
+                                        pdfFile ? "px-3 py-2" : "p-8",
+                                        isDragging
+                                            ? "border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20"
+                                            : pdfFile
+                                                ? "border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-950/10"
+                                                : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
+                                    )}
+                                >
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".pdf"
+                                        className="hidden"
+                                        onChange={handleFileInputChange}
+                                    />
+                                    {pdfFile ? (
+                                        <div className="flex items-center gap-3">
+                                            <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                                            <div className="flex-1 min-w-0 text-left">
+                                                <p className="text-sm font-medium truncate">{pdfFile.name}</p>
+                                                <p className="text-xs text-zinc-500">
+                                                    {(pdfFile.size / 1024 / 1024).toFixed(1)} MB — {totalPages} {t.pages}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); clearPdf(); }}
+                                                className="shrink-0 p-1 rounded hover:bg-rose-100 dark:hover:bg-rose-900/30 text-zinc-400 hover:text-rose-500 transition-colors"
+                                                title={t.clearPdf}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <Upload className="h-8 w-8 mx-auto text-zinc-400" />
+                                            <p className="text-sm text-zinc-600 dark:text-zinc-400">{t.dropZone}</p>
+                                            <p className="text-xs text-zinc-400 dark:text-zinc-500">{t.dropZoneHint}</p>
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Selected record indicator */}
                                 {selectedRecord ? (
                                     <div className={cn(
@@ -836,56 +885,6 @@ export default function UploadPage() {
                                     <div className="rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 p-4 text-center">
                                         <p className="text-sm text-zinc-400 dark:text-zinc-500">{t.selectRecord}</p>
                                     </div>
-                                )}
-
-                                {/* PDF drop zone */}
-                                <div
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className={cn(
-                                        "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
-                                        isDragging
-                                            ? "border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20"
-                                            : pdfFile
-                                                ? "border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-950/10"
-                                                : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
-                                    )}
-                                >
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        className="hidden"
-                                        onChange={handleFileInputChange}
-                                    />
-                                    {pdfFile ? (
-                                        <div className="space-y-1">
-                                            <FileText className="h-8 w-8 mx-auto text-emerald-500" />
-                                            <p className="text-sm font-medium">{pdfFile.name}</p>
-                                            <p className="text-xs text-zinc-500">
-                                                {(pdfFile.size / 1024 / 1024).toFixed(1)} MB — {totalPages} {t.pages}
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <Upload className="h-8 w-8 mx-auto text-zinc-400" />
-                                            <p className="text-sm text-zinc-600 dark:text-zinc-400">{t.dropZone}</p>
-                                            <p className="text-xs text-zinc-400 dark:text-zinc-500">{t.dropZoneHint}</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Clear PDF button */}
-                                {pdfFile && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); clearPdf(); }}
-                                        className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-rose-500 transition-colors"
-                                    >
-                                        <Trash2 className="h-3 w-3" />
-                                        {t.clearPdf}
-                                    </button>
                                 )}
 
                                 {/* Page thumbnails grid */}
