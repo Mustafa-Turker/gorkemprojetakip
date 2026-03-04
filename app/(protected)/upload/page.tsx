@@ -240,7 +240,7 @@ function getFilename(docUrl: string) {
 }
 
 export default function UploadPage() {
-    const [lang, setLang] = useState<Lang>("en");
+    const [lang, setLang] = useState<Lang>("tr");
     const t = translations[lang];
 
     // Date selection
@@ -811,7 +811,19 @@ export default function UploadPage() {
                                     )}>
                                         <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium mb-1">{t.selectedRecord}</p>
                                         <p className="font-mono text-sm font-semibold">{selectedRecord.uniquecode}</p>
-                                        <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">{selectedRecord.carifirma} — {formatCurrency(Math.abs(Number(selectedRecord.usd_degeri) || 0))}</p>
+                                        <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">{selectedRecord.carifirma}</p>
+                                        <div className="flex items-center gap-3 mt-1">
+                                            {(Number(selectedRecord.giris_tutar) || 0) > 0 && (
+                                                <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                                    {t.giris}: {(Number(selectedRecord.giris_tutar)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
+                                                </span>
+                                            )}
+                                            {(Number(selectedRecord.cikis_tutar) || 0) > 0 && (
+                                                <span className="text-xs font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                                                    {t.cikis}: {(Number(selectedRecord.cikis_tutar)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {selectedRecord.parabirimi || ""}
+                                                </span>
+                                            )}
+                                        </div>
                                         <p className="text-xs text-zinc-500 mt-1">{t.target} {getFilename(selectedRecord.doc)}</p>
                                         {fileStatuses[selectedRecord.doc] === true && (
                                             <div className="flex items-center gap-1.5 mt-2 text-emerald-600 dark:text-emerald-400">

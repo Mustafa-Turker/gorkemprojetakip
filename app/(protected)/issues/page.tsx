@@ -290,7 +290,7 @@ function fmtCompact(v: number): string {
 }
 
 export default function IssuesPage() {
-    const [lang, setLang] = useState<Lang>("en");
+    const [lang, setLang] = useState<Lang>("tr");
     const t = translations[lang];
 
     // Fetch-level filters
