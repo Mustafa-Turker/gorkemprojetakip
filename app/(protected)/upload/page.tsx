@@ -47,6 +47,9 @@ interface DocumentRecord {
     partner: string;
     islemturu: string;
     cost: number;
+    giris_tutar: number;
+    cikis_tutar: number;
+    parabirimi: string;
 }
 
 interface ScopeStats {
@@ -722,8 +725,9 @@ export default function UploadPage() {
                                 ) : records.map((record) => {
                                     const status = fileStatuses[record.doc];
                                     const isSelected = selectedRecord?.uniquecode === record.uniquecode;
-                                    const amount = Number(record.usd_degeri) || 0;
-                                    const isIncome = amount > 0;
+                                    const giris = Number(record.giris_tutar) || 0;
+                                    const cikis = Number(record.cikis_tutar) || 0;
+                                    const currency = record.parabirimi || "";
                                     return (
                                         <div
                                             key={record.uniquecode}
@@ -752,27 +756,31 @@ export default function UploadPage() {
                                                         <span className="font-mono text-xs font-semibold">{record.uniquecode}</span>
                                                         <Badge variant="outline" className="text-[10px] px-1 py-0">{record.projekodu}</Badge>
                                                         <Badge variant="secondary" className="text-[10px] px-1 py-0">{record.source}</Badge>
+                                                        {record.islemturu && <Badge variant="outline" className="text-[10px] px-1 py-0 text-violet-600 dark:text-violet-400 border-violet-300 dark:border-violet-700">{record.islemturu}</Badge>}
                                                     </div>
                                                     <p className="text-xs truncate text-zinc-500 dark:text-zinc-400">{record.carifirma}</p>
                                                 </div>
-                                                {/* Amount with giris/cikis */}
-                                                <div className="text-right shrink-0">
-                                                    <div className="flex items-center gap-1 justify-end">
-                                                        <span className={cn(
-                                                            "text-[10px] font-medium px-1 py-0 rounded",
-                                                            isIncome
-                                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                                : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                                                        )}>
-                                                            {isIncome ? t.giris : t.cikis}
-                                                        </span>
-                                                        <span className={cn(
-                                                            "text-xs font-semibold tabular-nums",
-                                                            isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                                                        )}>
-                                                            {formatCurrency(Math.abs(amount))}
-                                                        </span>
-                                                    </div>
+                                                {/* Giris / Cikis amounts */}
+                                                <div className="text-right shrink-0 space-y-0.5">
+                                                    {giris > 0 && (
+                                                        <div className="flex items-center gap-1 justify-end">
+                                                            <span className="text-[10px] font-medium px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">{t.giris}</span>
+                                                            <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                                                {giris.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {cikis > 0 && (
+                                                        <div className="flex items-center gap-1 justify-end">
+                                                            <span className="text-[10px] font-medium px-1 py-0 rounded bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">{t.cikis}</span>
+                                                            <span className="text-xs font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                                                                {cikis.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {giris === 0 && cikis === 0 && (
+                                                        <span className="text-xs text-zinc-400">-</span>
+                                                    )}
                                                 </div>
                                                 {/* View details button */}
                                                 <button
@@ -1003,17 +1011,14 @@ export default function UploadPage() {
                                     <span className="text-zinc-500 font-medium">{t.cost}</span>
                                     <span>{viewDetailRecord.cost}</span>
 
-                                    <span className="text-zinc-500 font-medium">{(() => {
-                                        const amt = Number(viewDetailRecord.usd_degeri) || 0;
-                                        return amt > 0 ? t.giris : t.cikis;
-                                    })()}</span>
-                                    <span className={cn(
-                                        "font-semibold tabular-nums",
-                                        (Number(viewDetailRecord.usd_degeri) || 0) > 0
-                                            ? "text-emerald-600 dark:text-emerald-400"
-                                            : "text-rose-600 dark:text-rose-400"
-                                    )}>
-                                        {formatCurrency(Math.abs(Number(viewDetailRecord.usd_degeri) || 0))}
+                                    <span className="text-zinc-500 font-medium">{t.giris}</span>
+                                    <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                        {(Number(viewDetailRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
+                                    </span>
+
+                                    <span className="text-zinc-500 font-medium">{t.cikis}</span>
+                                    <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                                        {(Number(viewDetailRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
                                     </span>
                                 </div>
                                 <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
