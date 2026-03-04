@@ -356,51 +356,46 @@ export default function UploadPage() {
         }
     }, [year, month, day, runCheck]);
 
-    // Handle PDF load — get page count with pdf-lib, render thumbnails with pdfjs-dist
+    // Handle PDF load — use pdfjs-dist for page count + thumbnails (more tolerant parser)
+    // pdf-lib is only used at upload time for page extraction
     const handlePdfLoad = useCallback(async (file: File) => {
         setPdfFile(file);
         setPageRangeInput("");
         setSelectedPages([]);
         setUploadResult(null);
         setPageThumbnails([]);
+        setRenderingThumbnails(true);
 
         const buffer = await file.arrayBuffer();
         setPdfArrayBuffer(buffer);
 
         try {
-            const { PDFDocument } = await import("pdf-lib");
-            const src = await PDFDocument.load(buffer);
-            const count = src.getPageCount();
+            const pdfjsLib = await import("pdfjs-dist");
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+            const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+            const count = pdfDoc.numPages;
             setTotalPages(count);
 
-            // Render thumbnails with pdfjs-dist
-            setRenderingThumbnails(true);
-            try {
-                const pdfjsLib = await import("pdfjs-dist");
-                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-                const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
-                const thumbs: string[] = [];
-                for (let i = 1; i <= count; i++) {
-                    const page = await pdfDoc.getPage(i);
-                    const viewport = page.getViewport({ scale: 0.4 });
-                    const canvas = document.createElement("canvas");
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    const ctx = canvas.getContext("2d")!;
-                    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-                    thumbs.push(canvas.toDataURL("image/jpeg", 0.7));
-                }
-                setPageThumbnails(thumbs);
-            } catch (renderErr) {
-                console.error("Thumbnail render error:", renderErr);
-            } finally {
-                setRenderingThumbnails(false);
+            const thumbs: string[] = [];
+            for (let i = 1; i <= count; i++) {
+                const page = await pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 0.4 });
+                const canvas = document.createElement("canvas");
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext("2d")!;
+                await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+                thumbs.push(canvas.toDataURL("image/jpeg", 0.7));
             }
-        } catch {
+            setPageThumbnails(thumbs);
+        } catch (err) {
+            console.error("PDF load error:", err);
             setError("Failed to read PDF file");
             setPdfFile(null);
             setPdfArrayBuffer(null);
             setTotalPages(0);
+        } finally {
+            setRenderingThumbnails(false);
         }
     }, []);
 
@@ -424,7 +419,7 @@ export default function UploadPage() {
 
         try {
             const { PDFDocument } = await import("pdf-lib");
-            const src = await PDFDocument.load(pdfArrayBuffer);
+            const src = await PDFDocument.load(pdfArrayBuffer, { ignoreEncryption: true });
             const doc = await PDFDocument.create();
             const pages = await doc.copyPages(src, selectedPages);
             pages.forEach(p => doc.addPage(p));
