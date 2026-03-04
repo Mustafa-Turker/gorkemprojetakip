@@ -31,6 +31,12 @@ export async function GET(request) {
             sql += ` AND EXTRACT(MONTH FROM date) = $${params.length}`;
         }
 
+        const day = searchParams.get("day");
+        if (day) {
+            params.push(parseInt(day));
+            sql += ` AND EXTRACT(DAY FROM date) = $${params.length}`;
+        }
+
         sql += " ORDER BY date DESC, uniquecode ASC";
 
         const result = await query(sql, params);

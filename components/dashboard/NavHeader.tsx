@@ -12,6 +12,7 @@ const NAV_ITEMS = [
     { href: "/balances", label: "Balances" },
     { href: "/study", label: "Study" },
     { href: "/issues", label: "Issues" },
+    { href: "/upload", label: "Upload" },
 ];
 
 export default function NavHeader() {
