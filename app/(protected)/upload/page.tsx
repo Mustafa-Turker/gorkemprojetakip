@@ -10,6 +10,7 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogFooter,
 } from "@/components/ui/dialog";
 import {
     Select,
@@ -33,6 +34,7 @@ import {
     Trash2,
     Eye,
     Maximize2,
+    ExternalLink,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -133,6 +135,10 @@ const translations = {
         transType: "Trans. Type",
         cost: "Cost",
         pagePreview: "Page Preview",
+        viewDocument: "View Document",
+        noPreview: "No preview available",
+        openInSharePoint: "Open in SharePoint",
+        close: "Close",
         months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     },
     tr: {
@@ -186,6 +192,10 @@ const translations = {
         transType: "Islem Turu",
         cost: "Maliyet",
         pagePreview: "Sayfa Onizleme",
+        viewDocument: "Belgeyi Goruntule",
+        noPreview: "Onizleme mevcut degil",
+        openInSharePoint: "SharePoint'te Ac",
+        close: "Kapat",
         months: ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
     },
 } as const;
@@ -284,6 +294,9 @@ export default function UploadPage() {
     const [previewPageIdx, setPreviewPageIdx] = useState<number | null>(null);
     const [previewPageDataUrl, setPreviewPageDataUrl] = useState<string | null>(null);
     const [renderingPreview, setRenderingPreview] = useState(false);
+    const [docPreviewRecord, setDocPreviewRecord] = useState<DocumentRecord | null>(null);
+    const [docThumbnailUrl, setDocThumbnailUrl] = useState<string | null>(null);
+    const [docThumbnailLoading, setDocThumbnailLoading] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -536,6 +549,24 @@ export default function UploadPage() {
             setRenderingPreview(false);
         }
     }, [pdfArrayBuffer]);
+
+    // View existing document from SharePoint
+    const handleViewDocument = useCallback(async (record: DocumentRecord) => {
+        setDocPreviewRecord(record);
+        setDocThumbnailUrl(null);
+        setDocThumbnailLoading(true);
+        const meta = fileMetadata[record.doc];
+        if (meta?.id) {
+            try {
+                const resp = await fetch(`/api/documents/thumbnail?itemId=${encodeURIComponent(meta.id)}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    setDocThumbnailUrl(data.large || data.medium || data.small || null);
+                }
+            } catch { /* thumbnail is optional */ }
+        }
+        setDocThumbnailLoading(false);
+    }, [fileMetadata]);
 
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -790,6 +821,16 @@ export default function UploadPage() {
                                                 >
                                                     <Eye className="h-3.5 w-3.5" />
                                                 </button>
+                                                {/* View existing document button */}
+                                                {status === true && fileMetadata[record.doc]?.id && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleViewDocument(record); }}
+                                                        className="shrink-0 p-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                                                        title={t.viewDocument}
+                                                    >
+                                                        <FileText className="h-3.5 w-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );
@@ -1032,8 +1073,17 @@ export default function UploadPage() {
                                         {Math.abs(Number(viewDetailRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
                                     </span>
                                 </div>
-                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                    <p className="text-xs text-zinc-400 truncate">Doc: {viewDetailRecord.doc}</p>
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
+                                    <p className="text-xs text-zinc-400 truncate flex-1">Doc: {viewDetailRecord.doc}</p>
+                                    {fileStatuses[viewDetailRecord.doc] === true && fileMetadata[viewDetailRecord.doc]?.id && (
+                                        <button
+                                            onClick={() => { setViewDetailRecord(null); handleViewDocument(viewDetailRecord); }}
+                                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+                                        >
+                                            <FileText className="h-3.5 w-3.5" />
+                                            {t.viewDocument}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -1068,6 +1118,52 @@ export default function UploadPage() {
                                 ) : null}
                             </div>
                         )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Document Preview Dialog */}
+                <Dialog open={!!docPreviewRecord} onOpenChange={(open) => { if (!open) { setDocPreviewRecord(null); setDocThumbnailUrl(null); } }}>
+                    <DialogContent className="sm:max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-indigo-500" />
+                                {t.viewDocument}
+                            </DialogTitle>
+                        </DialogHeader>
+                        {docPreviewRecord && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 text-sm">
+                                    <span className="font-mono font-semibold">{docPreviewRecord.uniquecode}</span>
+                                    <span className="text-zinc-500 truncate">{docPreviewRecord.carifirma}</span>
+                                </div>
+                                <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-center min-h-[300px]">
+                                    {docThumbnailLoading ? (
+                                        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+                                    ) : docThumbnailUrl ? (
+                                        <img src={docThumbnailUrl} alt={getFilename(docPreviewRecord.doc)} className="max-w-full max-h-[500px] object-contain" />
+                                    ) : (
+                                        <div className="text-center py-8 text-zinc-400">
+                                            <FileText className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">{t.noPreview}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        <DialogFooter>
+                            <a
+                                href={docPreviewRecord?.doc}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white transition-colors"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                                {t.openInSharePoint}
+                            </a>
+                            <Button variant="outline" onClick={() => { setDocPreviewRecord(null); setDocThumbnailUrl(null); }}>
+                                {t.close}
+                            </Button>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </main>
