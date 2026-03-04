@@ -655,6 +655,24 @@ export default function IssuesPage() {
         const autoTable = (await import("jspdf-autotable")).default;
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
+        // Load a Unicode-compatible font for Turkish characters
+        try {
+            const fontResp = await fetch("https://cdn.jsdelivr.net/fontsource/fonts/noto-sans@latest/latin-ext-400-normal.ttf");
+            if (fontResp.ok) {
+                const fontBuf = await fontResp.arrayBuffer();
+                const fontBase64 = btoa(String.fromCharCode(...new Uint8Array(fontBuf)));
+                doc.addFileToVFS("NotoSans-Regular.ttf", fontBase64);
+                doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+                doc.addFileToVFS("NotoSans-Bold.ttf", fontBase64);
+                doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+                doc.setFont("NotoSans");
+            }
+        } catch { /* fallback to default font */ }
+
+        // Status labels
+        const statusUploaded = lang === "tr" ? "Yuklu" : "Uploaded";
+        const statusMissing = lang === "tr" ? "Eksik" : "Missing";
+
         // Header
         doc.setFontSize(14);
         doc.text(t.title, 14, 15);
@@ -669,13 +687,13 @@ export default function IssuesPage() {
             r.uniquecode,
             r.projekodu,
             r.source,
-            r.partner || "—",
+            r.partner || "-",
             r.carifirma || "",
             r.aciklama || "",
             formatCurrency(Number(r.usd_degeri) || 0),
-            r.islemturu || "—",
+            r.islemturu || "-",
             Number(r.cost) || 0,
-            fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? "✓" : "✗",
+            fileStatuses[r.doc] === undefined ? "-" : fileStatuses[r.doc] ? statusUploaded : statusMissing,
         ]);
 
         const totalAmt = filteredRecords.reduce((s, r) => s + Math.abs(Number(r.usd_degeri) || 0), 0);
@@ -685,7 +703,7 @@ export default function IssuesPage() {
             head,
             body,
             startY: contextLabel ? 27 : 20,
-            styles: { fontSize: 7, cellPadding: 1.5 },
+            styles: { fontSize: 7, cellPadding: 1.5, font: "NotoSans" },
             headStyles: { fillColor: [63, 63, 70], fontSize: 7 },
             columnStyles: {
                 0: { cellWidth: 8 },
@@ -697,6 +715,15 @@ export default function IssuesPage() {
                 // Bold the total row
                 if (data.row.index === body.length - 1) {
                     data.cell.styles.fontStyle = "bold";
+                }
+                // Color the status column
+                if (data.column.index === 11 && data.section === "body" && data.row.index < body.length - 1) {
+                    const val = data.cell.raw;
+                    if (val === statusMissing) {
+                        data.cell.styles.textColor = [220, 38, 38];
+                    } else if (val === statusUploaded) {
+                        data.cell.styles.textColor = [22, 163, 74];
+                    }
                 }
             },
         });
