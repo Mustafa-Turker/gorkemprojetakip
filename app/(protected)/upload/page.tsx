@@ -739,15 +739,15 @@ export default function UploadPage() {
                         ))}
                     </div>
                 ) : records && (
-                    <div className="flex flex-col lg:flex-row gap-6">
+                    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-280px)]">
                         {/* LEFT PANEL: Record cards */}
-                        <div className="lg:w-[40%] space-y-3">
-                            <div className="flex items-center justify-between">
+                        <div className="lg:w-[40%] flex flex-col min-h-0">
+                            <div className="flex items-center justify-between mb-2 shrink-0">
                                 <h3 className="text-sm font-semibold">
                                     {t.records} ({records.length})
                                 </h3>
                             </div>
-                            <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+                            <div className="space-y-2 overflow-y-auto pr-1 flex-1 min-h-0">
                                 {records.length === 0 ? (
                                     <div className="text-center py-12 text-zinc-400 dark:text-zinc-500">
                                         <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -839,8 +839,8 @@ export default function UploadPage() {
                         </div>
 
                         {/* RIGHT PANEL: PDF Operations */}
-                        <div className="lg:w-[60%] lg:sticky lg:top-20 lg:self-start space-y-4">
-                            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-5 space-y-5">
+                        <div className="lg:w-[60%] flex flex-col min-h-0">
+                            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-4 space-y-4 flex flex-col flex-1 min-h-0 overflow-y-auto">
 
                                 {/* PDF drop zone — compact when file loaded */}
                                 <div
@@ -952,7 +952,7 @@ export default function UploadPage() {
                                                 <span className="text-xs">Rendering pages...</span>
                                             </div>
                                         ) : pageThumbnails.length > 0 && (
-                                            <div className="grid grid-cols-4 gap-2 max-h-[450px] overflow-y-auto p-1">
+                                            <div className="grid grid-cols-4 gap-2 p-1">
                                                 {pageThumbnails.map((thumb, idx) => {
                                                     const isPageSelected = selectedPages.includes(idx);
                                                     return (
