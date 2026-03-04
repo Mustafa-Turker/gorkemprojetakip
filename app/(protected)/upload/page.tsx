@@ -6,6 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -25,6 +31,8 @@ import {
     ChevronDown,
     ChevronUp,
     Trash2,
+    Eye,
+    Maximize2,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -110,6 +118,18 @@ const translations = {
         onlyPdf: "Only PDF files are accepted",
         clearPdf: "Clear PDF",
         pages: "pages",
+        giris: "In",
+        cikis: "Out",
+        recordDetails: "Record Details",
+        vendor: "Vendor",
+        description: "Description",
+        date: "Date",
+        project: "Project",
+        source: "Source",
+        partner: "Partner",
+        transType: "Trans. Type",
+        cost: "Cost",
+        pagePreview: "Page Preview",
         months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     },
     tr: {
@@ -151,6 +171,18 @@ const translations = {
         onlyPdf: "Sadece PDF dosyalari kabul edilir",
         clearPdf: "PDF'i Temizle",
         pages: "sayfa",
+        giris: "Giris",
+        cikis: "Cikis",
+        recordDetails: "Kayit Detaylari",
+        vendor: "Firma",
+        description: "Aciklama",
+        date: "Tarih",
+        project: "Proje",
+        source: "Kaynak",
+        partner: "Ortak",
+        transType: "Islem Turu",
+        cost: "Maliyet",
+        pagePreview: "Sayfa Onizleme",
         months: ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
     },
 } as const;
@@ -245,6 +277,10 @@ export default function UploadPage() {
     // UI state
     const [activityLogOpen, setActivityLogOpen] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [viewDetailRecord, setViewDetailRecord] = useState<DocumentRecord | null>(null);
+    const [previewPageIdx, setPreviewPageIdx] = useState<number | null>(null);
+    const [previewPageDataUrl, setPreviewPageDataUrl] = useState<string | null>(null);
+    const [renderingPreview, setRenderingPreview] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -473,6 +509,31 @@ export default function UploadPage() {
         });
     }, []);
 
+    // Render high-res page preview
+    const openPagePreview = useCallback(async (pageIdx: number) => {
+        setPreviewPageIdx(pageIdx);
+        setPreviewPageDataUrl(null);
+        if (!pdfArrayBuffer) return;
+        setRenderingPreview(true);
+        try {
+            const pdfjsLib = await import("pdfjs-dist");
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+            const pdfDoc = await pdfjsLib.getDocument({ data: pdfArrayBuffer.slice(0) }).promise;
+            const page = await pdfDoc.getPage(pageIdx + 1);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement("canvas");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext("2d")!;
+            await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+            setPreviewPageDataUrl(canvas.toDataURL("image/png"));
+        } catch (err) {
+            console.error("Preview render error:", err);
+        } finally {
+            setRenderingPreview(false);
+        }
+    }, [pdfArrayBuffer]);
+
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -646,7 +707,7 @@ export default function UploadPage() {
                 ) : records && (
                     <div className="flex flex-col lg:flex-row gap-6">
                         {/* LEFT PANEL: Record cards */}
-                        <div className="lg:w-[57%] space-y-3">
+                        <div className="lg:w-[40%] space-y-3">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-sm font-semibold">
                                     {t.records} ({records.length})
@@ -661,41 +722,66 @@ export default function UploadPage() {
                                 ) : records.map((record) => {
                                     const status = fileStatuses[record.doc];
                                     const isSelected = selectedRecord?.uniquecode === record.uniquecode;
+                                    const amount = Number(record.usd_degeri) || 0;
+                                    const isIncome = amount > 0;
                                     return (
                                         <div
                                             key={record.uniquecode}
                                             onClick={() => setSelectedRecord(record)}
                                             className={cn(
-                                                "rounded-lg border p-3 cursor-pointer transition-all duration-150 hover:shadow-md",
+                                                "rounded-lg border px-3 py-2 cursor-pointer transition-all duration-150 hover:shadow-md",
                                                 isSelected
                                                     ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30"
                                                     : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700"
                                             )}
                                         >
-                                            <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                {/* Status icon */}
+                                                <div className="shrink-0">
+                                                    {status === undefined ? (
+                                                        <span className="text-zinc-300 dark:text-zinc-700 text-xs">-</span>
+                                                    ) : status ? (
+                                                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                                    ) : (
+                                                        <XCircle className="h-4 w-4 text-rose-500" />
+                                                    )}
+                                                </div>
+                                                {/* Code + badges */}
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span className="font-mono text-xs font-semibold">{record.uniquecode}</span>
-                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{record.projekodu}</Badge>
-                                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{record.source}</Badge>
-                                                        {record.partner && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{record.partner}</Badge>}
+                                                        <Badge variant="outline" className="text-[10px] px-1 py-0">{record.projekodu}</Badge>
+                                                        <Badge variant="secondary" className="text-[10px] px-1 py-0">{record.source}</Badge>
                                                     </div>
-                                                    <p className="text-sm truncate text-zinc-600 dark:text-zinc-400">{record.carifirma}</p>
-                                                    <p className="text-xs truncate text-zinc-400 dark:text-zinc-500">{record.aciklama}</p>
+                                                    <p className="text-xs truncate text-zinc-500 dark:text-zinc-400">{record.carifirma}</p>
                                                 </div>
+                                                {/* Amount with giris/cikis */}
                                                 <div className="text-right shrink-0">
-                                                    <p className="text-sm font-semibold tabular-nums">{formatCurrency(Math.abs(Number(record.usd_degeri) || 0))}</p>
-                                                    <p className="text-xs text-zinc-400 tabular-nums">{formatDate(record.date)}</p>
-                                                    <div className="mt-1">
-                                                        {status === undefined ? (
-                                                            <span className="text-zinc-300 dark:text-zinc-700 text-xs">-</span>
-                                                        ) : status ? (
-                                                            <CheckCircle2 className="h-4 w-4 text-emerald-500 ml-auto" />
-                                                        ) : (
-                                                            <XCircle className="h-4 w-4 text-rose-500 ml-auto" />
-                                                        )}
+                                                    <div className="flex items-center gap-1 justify-end">
+                                                        <span className={cn(
+                                                            "text-[10px] font-medium px-1 py-0 rounded",
+                                                            isIncome
+                                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                                : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                                                        )}>
+                                                            {isIncome ? t.giris : t.cikis}
+                                                        </span>
+                                                        <span className={cn(
+                                                            "text-xs font-semibold tabular-nums",
+                                                            isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                                        )}>
+                                                            {formatCurrency(Math.abs(amount))}
+                                                        </span>
                                                     </div>
                                                 </div>
+                                                {/* View details button */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setViewDetailRecord(record); }}
+                                                    className="shrink-0 p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                                                    title={t.recordDetails}
+                                                >
+                                                    <Eye className="h-3.5 w-3.5" />
+                                                </button>
                                             </div>
                                         </div>
                                     );
@@ -704,7 +790,7 @@ export default function UploadPage() {
                         </div>
 
                         {/* RIGHT PANEL: PDF Operations */}
-                        <div className="lg:w-[43%] lg:sticky lg:top-20 lg:self-start space-y-4">
+                        <div className="lg:w-[60%] lg:sticky lg:top-20 lg:self-start space-y-4">
                             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-5 space-y-5">
 
                                 {/* Selected record indicator */}
@@ -806,7 +892,7 @@ export default function UploadPage() {
                                                 <span className="text-xs">Rendering pages...</span>
                                             </div>
                                         ) : pageThumbnails.length > 0 && (
-                                            <div className="grid grid-cols-4 gap-2 max-h-[400px] overflow-y-auto p-1">
+                                            <div className="grid grid-cols-4 gap-2 max-h-[450px] overflow-y-auto p-1">
                                                 {pageThumbnails.map((thumb, idx) => {
                                                     const isPageSelected = selectedPages.includes(idx);
                                                     return (
@@ -814,7 +900,7 @@ export default function UploadPage() {
                                                             key={idx}
                                                             onClick={() => togglePage(idx)}
                                                             className={cn(
-                                                                "relative cursor-pointer rounded-md border-2 overflow-hidden transition-all hover:shadow-md",
+                                                                "group relative cursor-pointer rounded-md border-2 overflow-hidden transition-all hover:shadow-md",
                                                                 isPageSelected
                                                                     ? "border-indigo-500 ring-2 ring-indigo-500/30 shadow-md"
                                                                     : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500"
@@ -839,6 +925,14 @@ export default function UploadPage() {
                                                                     <CheckCircle2 className="h-4 w-4 text-indigo-500 drop-shadow-md" />
                                                                 </div>
                                                             )}
+                                                            {/* Full-page preview button */}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openPagePreview(idx); }}
+                                                                className="absolute top-1 left-1 p-1 rounded bg-zinc-900/70 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-900/90"
+                                                                title={t.pagePreview}
+                                                            >
+                                                                <Maximize2 className="h-3 w-3" />
+                                                            </button>
                                                         </div>
                                                     );
                                                 })}
@@ -873,6 +967,93 @@ export default function UploadPage() {
                         </div>
                     </div>
                 )}
+                {/* Record Details Dialog */}
+                <Dialog open={!!viewDetailRecord} onOpenChange={(open) => { if (!open) setViewDetailRecord(null); }}>
+                    <DialogContent className="max-w-lg">
+                        <DialogHeader>
+                            <DialogTitle>{t.recordDetails}</DialogTitle>
+                        </DialogHeader>
+                        {viewDetailRecord && (
+                            <div className="space-y-3 text-sm">
+                                <div className="grid grid-cols-[100px_1fr] gap-y-2 gap-x-3">
+                                    <span className="text-zinc-500 font-medium">Code</span>
+                                    <span className="font-mono font-semibold">{viewDetailRecord.uniquecode}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.date}</span>
+                                    <span>{formatDate(viewDetailRecord.date)}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.project}</span>
+                                    <span>{viewDetailRecord.projekodu}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.source}</span>
+                                    <span>{viewDetailRecord.source}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.partner}</span>
+                                    <span>{viewDetailRecord.partner || "-"}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.vendor}</span>
+                                    <span>{viewDetailRecord.carifirma || "-"}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.description}</span>
+                                    <span className="break-words">{viewDetailRecord.aciklama || "-"}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.transType}</span>
+                                    <span>{viewDetailRecord.islemturu || "-"}</span>
+
+                                    <span className="text-zinc-500 font-medium">{t.cost}</span>
+                                    <span>{viewDetailRecord.cost}</span>
+
+                                    <span className="text-zinc-500 font-medium">{(() => {
+                                        const amt = Number(viewDetailRecord.usd_degeri) || 0;
+                                        return amt > 0 ? t.giris : t.cikis;
+                                    })()}</span>
+                                    <span className={cn(
+                                        "font-semibold tabular-nums",
+                                        (Number(viewDetailRecord.usd_degeri) || 0) > 0
+                                            ? "text-emerald-600 dark:text-emerald-400"
+                                            : "text-rose-600 dark:text-rose-400"
+                                    )}>
+                                        {formatCurrency(Math.abs(Number(viewDetailRecord.usd_degeri) || 0))}
+                                    </span>
+                                </div>
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <p className="text-xs text-zinc-400 truncate">Doc: {viewDetailRecord.doc}</p>
+                                </div>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Page Preview Dialog */}
+                <Dialog open={previewPageIdx !== null} onOpenChange={(open) => { if (!open) { setPreviewPageIdx(null); setPreviewPageDataUrl(null); } }}>
+                    <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+                        <DialogHeader>
+                            <DialogTitle>{t.pagePreview} — {lang === "en" ? "Page" : "Sayfa"} {previewPageIdx !== null ? previewPageIdx + 1 : ""}</DialogTitle>
+                        </DialogHeader>
+                        {previewPageIdx !== null && (
+                            <div className="flex justify-center">
+                                {renderingPreview ? (
+                                    <div className="flex items-center gap-2 py-20 text-zinc-400">
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span className="text-sm">Rendering...</span>
+                                    </div>
+                                ) : previewPageDataUrl ? (
+                                    <img
+                                        src={previewPageDataUrl}
+                                        alt={`Page ${previewPageIdx + 1}`}
+                                        className="max-w-full h-auto rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                    />
+                                ) : pageThumbnails[previewPageIdx] ? (
+                                    <img
+                                        src={pageThumbnails[previewPageIdx]}
+                                        alt={`Page ${previewPageIdx + 1}`}
+                                        className="max-w-full h-auto rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                    />
+                                ) : null}
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
             </main>
         </div>
     );
