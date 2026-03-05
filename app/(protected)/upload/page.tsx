@@ -375,7 +375,7 @@ export default function UploadPage() {
             setCheckedAll(true);
             setChecking(false);
             setCheckProgress("");
-            setActivityLogOpen(true);
+            // Keep activity log collapsed — user can expand manually
         }
     }, []);
 
@@ -1092,7 +1092,7 @@ export default function UploadPage() {
 
                 {/* Page Preview Dialog */}
                 <Dialog open={previewPageIdx !== null} onOpenChange={(open) => { if (!open) { setPreviewPageIdx(null); setPreviewPageDataUrl(null); } }}>
-                    <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-auto">
+                    <DialogContent className="max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] overflow-auto">
                         <DialogHeader>
                             <DialogTitle>{t.pagePreview} — {lang === "en" ? "Page" : "Sayfa"} {previewPageIdx !== null ? previewPageIdx + 1 : ""}</DialogTitle>
                         </DialogHeader>
