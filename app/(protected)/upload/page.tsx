@@ -840,7 +840,8 @@ export default function UploadPage() {
 
                         {/* RIGHT PANEL: PDF Operations */}
                         <div className="lg:w-[60%] flex flex-col min-h-0">
-                            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm p-4 space-y-4 flex flex-col flex-1 min-h-0 overflow-y-auto">
+                            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col flex-1 min-h-0">
+                            <div className="p-4 space-y-4 flex-1 min-h-0 overflow-y-auto">
 
                                 {/* PDF drop zone — compact when file loaded */}
                                 <div
@@ -1001,7 +1002,10 @@ export default function UploadPage() {
                                     </div>
                                 )}
 
-                                {/* Upload button */}
+                            </div>
+
+                                {/* Upload button — pinned at bottom */}
+                                <div className="border-t border-zinc-200 dark:border-zinc-800 p-4 space-y-2">
                                 <Button
                                     onClick={handleUpload}
                                     disabled={!canUpload}
@@ -1023,6 +1027,7 @@ export default function UploadPage() {
                                         <AlertDescription>{uploadResult.message}</AlertDescription>
                                     </Alert>
                                 )}
+                                </div>
                             </div>
                         </div>
                     </div>
