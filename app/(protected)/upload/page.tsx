@@ -593,7 +593,7 @@ export default function UploadPage() {
     const missingCount = records ? records.filter(r => fileStatuses[r.doc] === false).length : 0;
     const foundCount = records ? records.filter(r => fileStatuses[r.doc] === true).length : 0;
 
-    const canUpload = !!pdfFile && selectedPages.length > 0 && !!selectedRecord && !uploading && fileStatuses[selectedRecord?.doc ?? ""] !== true;
+    const canUpload = !!pdfFile && selectedPages.length > 0 && !!selectedRecord && !uploading;
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
