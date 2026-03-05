@@ -25,9 +25,13 @@ export async function POST(request) {
 
         return NextResponse.json({
             success: true,
+            id: result.id,
             name: result.name,
             size: result.size,
             webUrl: result.webUrl,
+            createdDateTime: result.createdDateTime,
+            lastModifiedDateTime: result.lastModifiedDateTime,
+            createdBy: result.createdBy?.user?.displayName || null,
         });
     } catch (error) {
         console.error("Upload error:", error);

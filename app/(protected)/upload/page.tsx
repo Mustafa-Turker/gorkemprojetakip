@@ -491,6 +491,15 @@ export default function UploadPage() {
             if (resp.ok && result.success) {
                 setUploadResult({ success: true, message: `${t.uploaded}: ${result.name}` });
                 setFileStatuses(prev => ({ ...prev, [selectedRecord.doc]: true }));
+                if (result.id) {
+                    setFileMetadata(prev => ({ ...prev, [selectedRecord.doc]: {
+                        id: result.id,
+                        createdDateTime: result.createdDateTime || new Date().toISOString(),
+                        lastModifiedDateTime: result.lastModifiedDateTime || new Date().toISOString(),
+                        createdBy: result.createdBy || null,
+                        size: result.size || 0,
+                    }}));
+                }
                 setSelectedRecord(null);
                 setPageRangeInput("");
                 setSelectedPages([]);
