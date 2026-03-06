@@ -1644,6 +1644,40 @@ export default function IssuesPage() {
                                         <span className="text-zinc-500 dark:text-zinc-400">{t.amountLabel}</span>
                                         <p className="font-medium">{formatCurrency(Number(uploadRecord.usd_degeri) || 0)}</p>
                                     </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.incoming}:</span>
+                                        <p className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+                                            {Math.abs(Number(uploadRecord.giris_tutar) || 0) > 0
+                                                ? `${Math.abs(Number(uploadRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
+                                                : "—"
+                                            }
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.outgoing}:</span>
+                                        <p className="font-medium tabular-nums text-rose-600 dark:text-rose-400">
+                                            {Math.abs(Number(uploadRecord.cikis_tutar) || 0) > 0
+                                                ? `${Math.abs(Number(uploadRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
+                                                : "—"
+                                            }
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.date}:</span>
+                                        <p className="font-medium">{formatDate(uploadRecord.date)}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.transType}:</span>
+                                        <p className="font-medium font-mono">{uploadRecord.islemturu || "—"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.project}:</span>
+                                        <p className="font-medium">{uploadRecord.projekodu}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-zinc-500 dark:text-zinc-400">{t.source}:</span>
+                                        <p className="font-medium">{uploadRecord.source}{uploadRecord.partner ? ` / ${uploadRecord.partner}` : ""}</p>
+                                    </div>
                                     <div className="col-span-2">
                                         <span className="text-zinc-500 dark:text-zinc-400">{t.descriptionLabel}</span>
                                         <p className="font-medium">{uploadRecord.aciklama}</p>
