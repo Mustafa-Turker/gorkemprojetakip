@@ -183,6 +183,9 @@ const translations = {
         openInSharePoint: "Open in SharePoint",
         recentUploads: "Recently Uploaded Documents",
         noUploadsYet: "No uploaded documents found yet",
+        incoming: "Incoming",
+        outgoing: "Outgoing",
+        currency: "Currency",
     },
     tr: {
         title: "Belge Yonetimi",
@@ -278,6 +281,9 @@ const translations = {
         openInSharePoint: "SharePoint'te Ac",
         recentUploads: "Son Yuklenen Belgeler",
         noUploadsYet: "Henuz yuklenmis belge bulunamadi",
+        incoming: "Giris",
+        outgoing: "Cikis",
+        currency: "Para Birimi",
     },
 } as const;
 
@@ -338,6 +344,9 @@ export default function IssuesPage() {
 
     // File metadata from SharePoint check
     const [fileMetadata, setFileMetadata] = useState<Record<string, FileMetadata>>({});
+
+    // Row selection
+    const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
     // View file details dialog
     const [viewRecord, setViewRecord] = useState<DocumentRecord | null>(null);
@@ -1433,39 +1442,49 @@ export default function IssuesPage() {
                     </div>
 
                     {/* Table card — rounded bottom only, connects to filter bar above */}
-                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-x-clip">
-                            <table className="w-full min-w-[1100px] text-sm">
-                                <thead className="sticky z-10 bg-zinc-50 dark:bg-zinc-900/50" style={{ top: filterBarHeight + 64 }}>
-                                    <tr
-                                        className="border-b border-zinc-200 dark:border-zinc-800"
-                                    >
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12">#</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.date}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.code}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.project}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.source}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">{t.partner}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.vendor}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden xl:table-cell">{t.description}</th>
-                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">{t.amount}</th>
-                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.transType}</th>
-                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{t.cost}</th>
-                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-20">{t.status}</th>
-                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-32">{t.action}</th>
+                    <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-auto max-h-[calc(100vh-200px)]">
+                            <table className="w-full text-sm" style={{ minWidth: 1400 }}>
+                                <thead className="sticky top-0 z-30 bg-zinc-50 dark:bg-zinc-900">
+                                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12 sticky left-0 z-40 bg-zinc-50 dark:bg-zinc-900">#</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[48px] z-40 bg-zinc-50 dark:bg-zinc-900 whitespace-nowrap">{t.date}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[148px] z-40 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] whitespace-nowrap">{t.code}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.project}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.source}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.partner}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.vendor}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.description}</th>
+                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.amount}</th>
+                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.incoming}</th>
+                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.outgoing}</th>
+                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.currency}</th>
+                                        <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.transType}</th>
+                                        <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.cost}</th>
+                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-20 sticky right-[128px] z-40 bg-zinc-50 dark:bg-zinc-900 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">{t.status}</th>
+                                        <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-32 sticky right-0 z-40 bg-zinc-50 dark:bg-zinc-900">{t.action}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {pagedRecords.map((record, i) => {
                                         const status = fileStatuses[record.doc];
                                         const rowNum = page * PAGE_SIZE + i + 1;
+                                        const isSelected = selectedRows.has(record.uniquecode);
+                                        const rowBg = isSelected ? "bg-indigo-50 dark:bg-indigo-950/30" : "bg-white dark:bg-zinc-900";
+                                        const rowHover = isSelected ? "" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/30";
                                         return (
                                             <tr
                                                 key={record.uniquecode}
-                                                className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
+                                                onClick={() => setSelectedRows(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(record.uniquecode)) next.delete(record.uniquecode);
+                                                    else next.add(record.uniquecode);
+                                                    return next;
+                                                })}
+                                                className={`border-b border-zinc-100 dark:border-zinc-800/50 ${rowHover} transition-colors cursor-pointer ${isSelected ? "bg-indigo-50 dark:bg-indigo-950/30" : ""}`}
                                             >
-                                                <td className="px-4 py-3 text-zinc-400 dark:text-zinc-500 tabular-nums">{rowNum}</td>
-                                                <td className="px-4 py-3 tabular-nums whitespace-nowrap">{formatDate(record.date)}</td>
-                                                <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{record.uniquecode}</td>
+                                                <td className={`px-4 py-3 text-zinc-400 dark:text-zinc-500 tabular-nums sticky left-0 z-20 ${rowBg}`}>{rowNum}</td>
+                                                <td className={`px-4 py-3 tabular-nums whitespace-nowrap sticky left-[48px] z-20 ${rowBg}`}>{formatDate(record.date)}</td>
+                                                <td className={`px-4 py-3 font-mono text-xs whitespace-nowrap sticky left-[148px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${rowBg}`}>{record.uniquecode}</td>
                                                 <td className="px-4 py-3">
                                                     <Badge variant="outline" className="font-mono text-xs">{record.projekodu}</Badge>
                                                 </td>
@@ -1479,26 +1498,41 @@ export default function IssuesPage() {
                                                         <span className="text-zinc-300 dark:text-zinc-700">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 hidden lg:table-cell max-w-[200px] truncate text-zinc-600 dark:text-zinc-400">
+                                                <td className="px-4 py-3 max-w-[200px] truncate text-zinc-600 dark:text-zinc-400">
                                                     {record.carifirma}
                                                 </td>
-                                                <td className="px-4 py-3 hidden xl:table-cell max-w-[250px] truncate text-zinc-500 dark:text-zinc-500">
+                                                <td className="px-4 py-3 max-w-[250px] truncate text-zinc-500 dark:text-zinc-500">
                                                     {record.aciklama}
                                                 </td>
                                                 <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                                                     {formatCurrency(Number(record.usd_degeri) || 0)}
                                                 </td>
-                                                <td className="px-4 py-3 hidden lg:table-cell">
+                                                <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+                                                    {Math.abs(Number(record.giris_tutar) || 0) > 0
+                                                        ? Math.abs(Number(record.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                        : <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    }
+                                                </td>
+                                                <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-rose-600 dark:text-rose-400">
+                                                    {Math.abs(Number(record.cikis_tutar) || 0) > 0
+                                                        ? Math.abs(Number(record.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                        : <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    }
+                                                </td>
+                                                <td className="px-4 py-3 text-center text-xs whitespace-nowrap">
+                                                    {record.parabirimi || <span className="text-zinc-300 dark:text-zinc-700">—</span>}
+                                                </td>
+                                                <td className="px-4 py-3">
                                                     {record.islemturu ? (
                                                         <Badge variant="outline" className="text-xs font-mono">{record.islemturu}</Badge>
                                                     ) : (
                                                         <span className="text-zinc-300 dark:text-zinc-700">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap hidden lg:table-cell">
+                                                <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                                                     {Number(record.cost) || 0}
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
+                                                <td className={`px-4 py-3 text-center sticky right-[128px] z-20 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] ${rowBg}`}>
                                                     {status === undefined ? (
                                                         <span className="text-zinc-300 dark:text-zinc-700">-</span>
                                                     ) : status ? (
@@ -1507,11 +1541,11 @@ export default function IssuesPage() {
                                                         <XCircle className="h-5 w-5 text-rose-500 mx-auto" />
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
+                                                <td className={`px-4 py-3 text-center sticky right-0 z-20 ${rowBg}`}>
                                                     <div className="flex items-center justify-center gap-1">
                                                         {status === true && fileMetadata[record.doc]?.id ? (
                                                             <button
-                                                                onClick={() => handleViewFile(record)}
+                                                                onClick={(e) => { e.stopPropagation(); handleViewFile(record); }}
                                                                 className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
                                                                 title={t.fileDetails}
                                                             >
@@ -1522,6 +1556,7 @@ export default function IssuesPage() {
                                                                 href={record.doc}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
+                                                                onClick={(e) => e.stopPropagation()}
                                                                 className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 dark:hover:border-indigo-700 transition-colors"
                                                                 title={t.viewDocument}
                                                             >
@@ -1532,7 +1567,7 @@ export default function IssuesPage() {
                                                             <Button
                                                                 size="sm"
                                                                 variant="outline"
-                                                                onClick={() => { setUploadRecord(record); setUploadResult(null); setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
+                                                                onClick={(e) => { e.stopPropagation(); setUploadRecord(record); setUploadResult(null); setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
                                                                 className="h-7 px-2 text-xs border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                                             >
                                                                 <Upload className="h-3 w-3 mr-1" />
@@ -1546,7 +1581,7 @@ export default function IssuesPage() {
                                     })}
                                     {pagedRecords.length === 0 && (
                                         <tr>
-                                            <td colSpan={13} className="px-4 py-12 text-center text-zinc-400">
+                                            <td colSpan={16} className="px-4 py-12 text-center text-zinc-400">
                                                 {t.noRecords}
                                             </td>
                                         </tr>
