@@ -358,6 +358,8 @@ export default function CostCodesPage() {
     // Classify a single record
     const classifyRecord = useCallback(async (record: DocumentRecord, additionalInfo?: string) => {
         setClassifying(record.uniquecode);
+        setAiPanelRecord(record.uniquecode);
+        const startTime = Date.now();
         try {
             const payload: Record<string, string> = {
                 uniquecode: record.uniquecode,
@@ -376,12 +378,12 @@ export default function CostCodesPage() {
                 body: JSON.stringify({ records: [payload] }),
             });
             const data = await resp.json();
+            const clientDurationMs = Date.now() - startTime;
             if (data.results?.[0]) {
                 setAiResults((prev) => ({
                     ...prev,
-                    [record.uniquecode]: data.results[0],
+                    [record.uniquecode]: { ...data.results[0], durationMs: clientDurationMs },
                 }));
-                setAiPanelRecord(record.uniquecode);
             }
         } catch (err) {
             setAiResults((prev) => ({
@@ -393,6 +395,7 @@ export default function CostCodesPage() {
                     request: { systemMessage: "", userMessage: "", model: "deepseek-reasoner" },
                     response: null,
                     listUsed: "new",
+                    durationMs: Date.now() - startTime,
                     error: (err as Error).message,
                 },
             }));
@@ -962,7 +965,12 @@ export default function CostCodesPage() {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">
-                                                {displayCode ? (
+                                                {isClassifying ? (
+                                                    <span className="inline-flex items-center gap-1.5 text-violet-500 dark:text-violet-400 text-xs">
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        {t.classifying}
+                                                    </span>
+                                                ) : displayCode ? (
                                                     <button
                                                         onClick={() => { if (aiResult) setAiPanelRecord(record.uniquecode); }}
                                                         className={`font-mono text-xs inline-flex items-center gap-1 ${
@@ -985,19 +993,17 @@ export default function CostCodesPage() {
                                                 ) : isMissing && !accepted ? (
                                                     <button
                                                         onClick={() => {
-                                                            if (aiResult && !isClassifying) {
+                                                            if (aiResult) {
                                                                 setAiPanelRecord(record.uniquecode);
-                                                            } else if (!isClassifying) {
+                                                            } else {
                                                                 classifyRecord(record);
                                                             }
                                                         }}
-                                                        disabled={isClassifying || classifyingAll}
+                                                        disabled={classifyingAll}
                                                         className="inline-flex items-center justify-center h-6 w-6 rounded-md text-violet-500 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                         title={aiResult ? t.aiDebugPanel : t.classify}
                                                     >
-                                                        {isClassifying ? (
-                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                        ) : aiResult ? (
+                                                        {aiResult ? (
                                                             <Search className="h-3.5 w-3.5" />
                                                         ) : (
                                                             <Sparkles className="h-3.5 w-3.5" />
@@ -1069,7 +1075,7 @@ export default function CostCodesPage() {
                 )}
 
                 {/* AI Debug Panel Dialog */}
-                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) { setAiPanelRecord(null); setEditingCode(null); setRetryWithInfo(null); } }}>
+                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open && !classifying) { setAiPanelRecord(null); setEditingCode(null); setRetryWithInfo(null); } }}>
                     <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1080,6 +1086,14 @@ export default function CostCodesPage() {
                                 {aiPanelRecordData?.uniquecode} &mdash; {aiPanelRecordData?.aciklama}
                             </DialogDescription>
                         </DialogHeader>
+
+                        {/* Loading indicator when classifying */}
+                        {aiPanelRecord && classifying === aiPanelRecord && (
+                            <div className="flex items-center gap-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 p-4">
+                                <Loader2 className="h-5 w-5 animate-spin text-violet-600 dark:text-violet-400" />
+                                <span className="text-sm text-violet-700 dark:text-violet-300 font-medium">{t.classifying}</span>
+                            </div>
+                        )}
 
                         {aiPanelResult && (
                             <div className="space-y-4">
@@ -1225,7 +1239,6 @@ export default function CostCodesPage() {
                                                         delete next[aiPanelResult.uniquecode];
                                                         return next;
                                                     });
-                                                    setAiPanelRecord(null);
                                                     if (aiPanelRecordData) classifyRecord(aiPanelRecordData);
                                                 }}
                                             >
@@ -1308,7 +1321,6 @@ export default function CostCodesPage() {
                                                             delete next[aiPanelResult.uniquecode];
                                                             return next;
                                                         });
-                                                        setAiPanelRecord(null);
                                                         if (aiPanelRecordData) classifyRecord(aiPanelRecordData, info);
                                                     }}
                                                     className="bg-violet-600 hover:bg-violet-700 text-white"
