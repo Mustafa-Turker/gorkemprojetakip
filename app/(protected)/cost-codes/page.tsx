@@ -35,6 +35,8 @@ import {
     ChevronUp,
     Check,
     X,
+    Pencil,
+    RotateCcw,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -55,6 +57,15 @@ interface DocumentRecord {
     masrafmerkezi: string;
 }
 
+interface AiCost {
+    inputCacheHit: number;
+    inputCacheMiss: number;
+    outputTokens: number;
+    inputCost: number;
+    outputCost: number;
+    totalCost: number;
+}
+
 interface AiClassifyResult {
     uniquecode: string;
     suggestion: string | null;
@@ -62,6 +73,8 @@ interface AiClassifyResult {
     request: { systemMessage: string; userMessage: string; model: string };
     response: unknown;
     listUsed: "old" | "new";
+    usage?: Record<string, number>;
+    cost?: AiCost | null;
     error?: string;
 }
 
@@ -136,6 +149,18 @@ const translations = {
         noSuggestion: "No suggestion returned",
         batchProgress: "Classifying {current} of {total}...",
         batchDone: "Classification complete: {done} of {total} classified",
+        apiCost: "API Cost",
+        inputTokens: "Input Tokens",
+        outputTokens: "Output Tokens",
+        cacheHit: "Cache Hit",
+        cacheMiss: "Cache Miss",
+        totalCost: "Total Cost",
+        changeCode: "Change",
+        manualEntry: "Enter Manually",
+        retryAi: "Retry AI",
+        saveCode: "Save",
+        cancelEdit: "Cancel",
+        totalApiCost: "Total API Cost",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -205,6 +230,18 @@ const translations = {
         noSuggestion: "Oneri donmedi",
         batchProgress: "{current} / {total} siniflandiriliyor...",
         batchDone: "Siniflandirma tamamlandi: {done} / {total} siniflandirildi",
+        apiCost: "API Maliyeti",
+        inputTokens: "Giris Token",
+        outputTokens: "Cikis Token",
+        cacheHit: "Onbellek",
+        cacheMiss: "Yeni",
+        totalCost: "Toplam Maliyet",
+        changeCode: "Degistir",
+        manualEntry: "Manuel Gir",
+        retryAi: "AI Tekrar",
+        saveCode: "Kaydet",
+        cancelEdit: "Iptal",
+        totalApiCost: "Toplam API Maliyeti",
     },
 } as const;
 
@@ -255,6 +292,8 @@ export default function CostCodesPage() {
     const [classifyingAll, setClassifyingAll] = useState(false);
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const [aiPanelRecord, setAiPanelRecord] = useState<string | null>(null);
+    const [editingCode, setEditingCode] = useState<string | null>(null); // uniquecode of record being manually edited
+    const [editingValue, setEditingValue] = useState("");
     const abortRef = useRef(false);
 
     // Sticky filter bar ref
@@ -661,12 +700,22 @@ export default function CostCodesPage() {
                                     {t.completion}: <span className="font-bold ml-1">{Math.round((metrics.filled / metrics.requires) * 100)}%</span>
                                 </Badge>
                             )}
-                            {/* AI classified count */}
+                            {/* AI classified count + total cost */}
                             {Object.keys(aiResults).length > 0 && (
-                                <Badge variant="outline" className="text-xs px-3 py-1.5 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/20">
-                                    <Sparkles className="h-3 w-3 mr-1" />
-                                    AI: <span className="font-bold ml-1">{Object.values(aiResults).filter((r) => r.suggestion).length}</span>
-                                </Badge>
+                                <>
+                                    <Badge variant="outline" className="text-xs px-3 py-1.5 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/20">
+                                        <Sparkles className="h-3 w-3 mr-1" />
+                                        AI: <span className="font-bold ml-1">{Object.values(aiResults).filter((r) => r.suggestion).length}</span>
+                                    </Badge>
+                                    {(() => {
+                                        const total = Object.values(aiResults).reduce((sum, r) => sum + (r.cost?.totalCost || 0), 0);
+                                        return total > 0 ? (
+                                            <Badge variant="outline" className="text-xs px-3 py-1.5 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                                {t.totalApiCost}: <span className="font-bold ml-1">${total.toFixed(4)}</span>
+                                            </Badge>
+                                        ) : null;
+                                    })()}
+                                </>
                             )}
                         </div>
                     </div>
@@ -1002,7 +1051,7 @@ export default function CostCodesPage() {
                 )}
 
                 {/* AI Debug Panel Dialog */}
-                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) setAiPanelRecord(null); }}>
+                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) { setAiPanelRecord(null); setEditingCode(null); } }}>
                     <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1040,11 +1089,17 @@ export default function CostCodesPage() {
                                     {aiPanelResult.suggestion ? (
                                         <div className="flex items-center gap-3">
                                             <span className="font-mono text-lg font-bold text-violet-700 dark:text-violet-300">
-                                                {aiPanelResult.suggestion}
+                                                {acceptedCodes[aiPanelResult.uniquecode] || aiPanelResult.suggestion}
                                             </span>
                                             <Badge variant="outline" className="text-xs">
                                                 {t.listUsed}: {aiPanelResult.listUsed === "old" ? "GIDER GRUPLARI 2022" : "IQ COST CODES"}
                                             </Badge>
+                                            {acceptedCodes[aiPanelResult.uniquecode] && (
+                                                <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
+                                                    <Check className="h-3 w-3 mr-1" />
+                                                    Accepted
+                                                </Badge>
+                                            )}
                                         </div>
                                     ) : (
                                         <span className="text-rose-600 dark:text-rose-400 text-sm">
@@ -1052,19 +1107,29 @@ export default function CostCodesPage() {
                                         </span>
                                     )}
 
-                                    {/* Accept / Dismiss */}
-                                    {aiPanelResult.suggestion && !acceptedCodes[aiPanelResult.uniquecode] && (
+                                    {/* Not yet accepted: Accept / Dismiss */}
+                                    {aiPanelResult.suggestion && !acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && (
                                         <div className="flex gap-2 mt-3">
                                             <Button
                                                 size="sm"
                                                 onClick={() => {
                                                     setAcceptedCodes((prev) => ({ ...prev, [aiPanelResult.uniquecode]: aiPanelResult.suggestion! }));
-                                                    setAiPanelRecord(null);
                                                 }}
                                                 className="bg-violet-600 hover:bg-violet-700 text-white"
                                             >
                                                 <Check className="h-4 w-4 mr-1" />
                                                 {t.accept}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setEditingCode(aiPanelResult.uniquecode);
+                                                    setEditingValue(aiPanelResult.suggestion || "");
+                                                }}
+                                            >
+                                                <Pencil className="h-4 w-4 mr-1" />
+                                                {t.manualEntry}
                                             </Button>
                                             <Button
                                                 size="sm"
@@ -1076,15 +1141,106 @@ export default function CostCodesPage() {
                                             </Button>
                                         </div>
                                     )}
-                                    {acceptedCodes[aiPanelResult.uniquecode] && (
-                                        <div className="mt-2">
-                                            <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
-                                                <Check className="h-3 w-3 mr-1" />
-                                                Accepted
-                                            </Badge>
+
+                                    {/* Already accepted: Change / Retry options */}
+                                    {acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && (
+                                        <div className="flex gap-2 mt-3">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setEditingCode(aiPanelResult.uniquecode);
+                                                    setEditingValue(acceptedCodes[aiPanelResult.uniquecode]);
+                                                }}
+                                            >
+                                                <Pencil className="h-4 w-4 mr-1" />
+                                                {t.changeCode}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={classifying !== null}
+                                                onClick={() => {
+                                                    setAcceptedCodes((prev) => {
+                                                        const next = { ...prev };
+                                                        delete next[aiPanelResult.uniquecode];
+                                                        return next;
+                                                    });
+                                                    setAiPanelRecord(null);
+                                                    if (aiPanelRecordData) classifyRecord(aiPanelRecordData);
+                                                }}
+                                            >
+                                                <RotateCcw className="h-4 w-4 mr-1" />
+                                                {t.retryAi}
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                    {/* Manual edit input */}
+                                    {editingCode === aiPanelResult.uniquecode && (
+                                        <div className="flex items-center gap-2 mt-3">
+                                            <Input
+                                                value={editingValue}
+                                                onChange={(e) => setEditingValue(e.target.value)}
+                                                placeholder="XX.XX.XX.XX"
+                                                className="font-mono text-sm h-8 w-[200px]"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" && editingValue.trim()) {
+                                                        setAcceptedCodes((prev) => ({ ...prev, [aiPanelResult.uniquecode]: editingValue.trim() }));
+                                                        setEditingCode(null);
+                                                    } else if (e.key === "Escape") {
+                                                        setEditingCode(null);
+                                                    }
+                                                }}
+                                            />
+                                            <Button
+                                                size="sm"
+                                                disabled={!editingValue.trim()}
+                                                onClick={() => {
+                                                    setAcceptedCodes((prev) => ({ ...prev, [aiPanelResult.uniquecode]: editingValue.trim() }));
+                                                    setEditingCode(null);
+                                                }}
+                                                className="bg-violet-600 hover:bg-violet-700 text-white"
+                                            >
+                                                <Check className="h-4 w-4 mr-1" />
+                                                {t.saveCode}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setEditingCode(null)}
+                                            >
+                                                {t.cancelEdit}
+                                            </Button>
                                         </div>
                                     )}
                                 </div>
+
+                                {/* API Cost */}
+                                {aiPanelResult.cost && (
+                                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-zinc-50 dark:bg-zinc-900">
+                                        <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">{t.apiCost}</div>
+                                        <div className="grid grid-cols-3 gap-3 text-sm tabular-nums">
+                                            <div>
+                                                <div className="text-xs text-zinc-400">{t.inputTokens} ({t.cacheHit})</div>
+                                                <div className="font-mono">{aiPanelResult.cost.inputCacheHit.toLocaleString()} <span className="text-zinc-400">= ${aiPanelResult.cost.inputCost.toFixed(6)}</span></div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-zinc-400">{t.inputTokens} ({t.cacheMiss})</div>
+                                                <div className="font-mono">{aiPanelResult.cost.inputCacheMiss.toLocaleString()}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-zinc-400">{t.outputTokens}</div>
+                                                <div className="font-mono">{aiPanelResult.cost.outputTokens.toLocaleString()} <span className="text-zinc-400">= ${aiPanelResult.cost.outputCost.toFixed(6)}</span></div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-zinc-500">{t.totalCost}</span>
+                                            <span className="font-mono font-bold text-sm">${aiPanelResult.cost.totalCost.toFixed(6)}</span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* AI Reasoning */}
                                 {aiPanelResult.reasoning && (

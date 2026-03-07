@@ -6,6 +6,28 @@ const OLD_LIST_ID = "b021ff2d-4637-43a7-9478-cf7a480703c6";
 const NEW_LIST_ID = "2b31da96-91de-43b3-a0b5-6cf0efa2948e";
 const DATE_CUTOFF = "2024-10-01";
 
+// DeepSeek Reasoner pricing (per 1M tokens)
+const PRICE_INPUT_CACHE_HIT = 0.028;
+const PRICE_INPUT_CACHE_MISS = 0.28;
+const PRICE_OUTPUT = 0.42;
+
+function calcCost(usage) {
+    if (!usage) return null;
+    const cacheHit = usage.prompt_cache_hit_tokens || 0;
+    const cacheMiss = usage.prompt_cache_miss_tokens || 0;
+    const output = usage.completion_tokens || 0;
+    const inputCost = (cacheHit / 1_000_000) * PRICE_INPUT_CACHE_HIT + (cacheMiss / 1_000_000) * PRICE_INPUT_CACHE_MISS;
+    const outputCost = (output / 1_000_000) * PRICE_OUTPUT;
+    return {
+        inputCacheHit: cacheHit,
+        inputCacheMiss: cacheMiss,
+        outputTokens: output,
+        inputCost: Math.round(inputCost * 1_000_000) / 1_000_000,
+        outputCost: Math.round(outputCost * 1_000_000) / 1_000_000,
+        totalCost: Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000,
+    };
+}
+
 // In-memory cache for cost code lists (per-request in Workers, but helps within a single batch)
 let cachedOldList = null;
 let cachedNewList = null;
@@ -206,6 +228,10 @@ export async function POST(request) {
                     if (codeMatch) suggestion = codeMatch[0];
                 }
 
+                // Calculate cost from usage (DeepSeek Reasoner pricing per 1M tokens)
+                const usage = dsData.usage || {};
+                const cost = calcCost(usage);
+
                 results.push({
                     uniquecode: record.uniquecode,
                     suggestion,
@@ -213,6 +239,8 @@ export async function POST(request) {
                     request: { systemMessage, userMessage, model: "deepseek-reasoner" },
                     response: dsData,
                     listUsed: useOld ? "old" : "new",
+                    usage,
+                    cost,
                 });
             } catch (err) {
                 results.push({
