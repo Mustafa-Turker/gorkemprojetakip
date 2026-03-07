@@ -877,10 +877,9 @@ export default function CostCodesPage() {
                         <table className="w-full text-sm" style={{ minWidth: 1500 }}>
                             <thead className="sticky top-0 z-30 bg-zinc-50 dark:bg-zinc-900">
                                 <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                                    <th className="px-2 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 w-10 sticky left-0 z-40 bg-zinc-50 dark:bg-zinc-900">{t.action}</th>
-                                    <th className="px-3 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-10 sticky left-[40px] z-40 bg-zinc-50 dark:bg-zinc-900">#</th>
-                                    <th className="px-3 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[80px] z-40 bg-zinc-50 dark:bg-zinc-900 whitespace-nowrap">{t.date}</th>
-                                    <th className="px-3 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[172px] z-40 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] whitespace-nowrap">{t.code}</th>
+                                    <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12 sticky left-0 z-40 bg-zinc-50 dark:bg-zinc-900">#</th>
+                                    <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[48px] z-40 bg-zinc-50 dark:bg-zinc-900 whitespace-nowrap">{t.date}</th>
+                                    <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 sticky left-[148px] z-40 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] whitespace-nowrap">{t.code}</th>
                                     <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.project}</th>
                                     <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.source}</th>
                                     <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.partner}</th>
@@ -915,33 +914,9 @@ export default function CostCodesPage() {
                                                 isMissing && !accepted ? "bg-rose-50/50 dark:bg-rose-950/10" : ""
                                             }`}
                                         >
-                                            <td className="px-2 py-3 text-center sticky left-0 z-20 bg-inherit">
-                                                {isMissing && !accepted && (
-                                                    <button
-                                                        onClick={() => {
-                                                            if (aiResult && !isClassifying) {
-                                                                setAiPanelRecord(record.uniquecode);
-                                                            } else if (!isClassifying) {
-                                                                classifyRecord(record);
-                                                            }
-                                                        }}
-                                                        disabled={isClassifying || classifyingAll}
-                                                        className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                                        title={aiResult ? t.aiDebugPanel : t.classify}
-                                                    >
-                                                        {isClassifying ? (
-                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                        ) : aiResult ? (
-                                                            <Search className="h-3.5 w-3.5" />
-                                                        ) : (
-                                                            <Sparkles className="h-3.5 w-3.5" />
-                                                        )}
-                                                    </button>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-3 text-zinc-400 dark:text-zinc-500 tabular-nums sticky left-[40px] z-20 bg-inherit">{rowNum}</td>
-                                            <td className="px-3 py-3 tabular-nums whitespace-nowrap sticky left-[80px] z-20 bg-inherit">{formatDate(record.date)}</td>
-                                            <td className="px-3 py-3 font-mono text-xs whitespace-nowrap sticky left-[172px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">{record.uniquecode}</td>
+                                            <td className="px-4 py-3 text-zinc-400 dark:text-zinc-500 tabular-nums sticky left-0 z-20 bg-inherit">{rowNum}</td>
+                                            <td className="px-4 py-3 tabular-nums whitespace-nowrap sticky left-[48px] z-20 bg-inherit">{formatDate(record.date)}</td>
+                                            <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sticky left-[148px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">{record.uniquecode}</td>
                                             <td className="px-4 py-3">
                                                 <Badge variant="outline" className="font-mono text-xs">{record.projekodu}</Badge>
                                             </td>
@@ -998,8 +973,27 @@ export default function CostCodesPage() {
                                                         <Sparkles className="h-3 w-3" />
                                                         {aiResult.suggestion}
                                                     </button>
-                                                ) : isMissing ? (
-                                                    <span className="text-rose-600 dark:text-rose-400 font-semibold">&mdash;</span>
+                                                ) : isMissing && !accepted ? (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (aiResult && !isClassifying) {
+                                                                setAiPanelRecord(record.uniquecode);
+                                                            } else if (!isClassifying) {
+                                                                classifyRecord(record);
+                                                            }
+                                                        }}
+                                                        disabled={isClassifying || classifyingAll}
+                                                        className="inline-flex items-center justify-center h-6 w-6 rounded-md text-violet-500 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                        title={aiResult ? t.aiDebugPanel : t.classify}
+                                                    >
+                                                        {isClassifying ? (
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        ) : aiResult ? (
+                                                            <Search className="h-3.5 w-3.5" />
+                                                        ) : (
+                                                            <Sparkles className="h-3.5 w-3.5" />
+                                                        )}
+                                                    </button>
                                                 ) : (
                                                     <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
                                                 )}
@@ -1027,7 +1021,7 @@ export default function CostCodesPage() {
                                 })}
                                 {pagedRecords.length === 0 && (
                                     <tr>
-                                        <td colSpan={15} className="px-4 py-12 text-center text-zinc-400">
+                                        <td colSpan={14} className="px-4 py-12 text-center text-zinc-400">
                                             {t.noRecords}
                                         </td>
                                     </tr>
