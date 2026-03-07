@@ -9,7 +9,8 @@
     "USERS": "{\"mustafa\":\"Mustafa.06\", \"oms\":\"oms213\", \"gorkem\":\"Gorkem775!\", \"memduh\":\"Memduh.0606\"}",
     "SP_TENANT_ID": "4cd50e46-1c4d-4b31-ac3a-0ba94441857b",
     "SP_CLIENT_ID": "f1378d68-f971-4c13-b4a1-10daa151da0f",
-    "SP_DRIVE_ID": "b!1eVuoY958EGb9HnnQBx30Aw395SQOVhMlRp2aXYBMTgeXXPoD7IaSapfpjFV4GM5"
+    "SP_DRIVE_ID": "b!1eVuoY958EGb9HnnQBx30Aw395SQOVhMlRp2aXYBMTgeXXPoD7IaSapfpjFV4GM5",
+    "DEEPSEEK_API_KEY": "sk-a358ee19d8974abf9bf91b9340b5bee9"
   },
   "assets": {
     "directory": ".open-next/assets",

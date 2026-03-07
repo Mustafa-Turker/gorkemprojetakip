@@ -15,6 +15,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@/components/ui/dialog";
+import {
     AlertCircle,
     Download,
     Loader2,
@@ -23,6 +30,11 @@ import {
     ChevronRight,
     FilterX,
     AlertTriangle,
+    Sparkles,
+    ChevronDown,
+    ChevronUp,
+    Check,
+    X,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -41,6 +53,16 @@ interface DocumentRecord {
     cikis_tutar: number;
     parabirimi: string;
     masrafmerkezi: string;
+}
+
+interface AiClassifyResult {
+    uniquecode: string;
+    suggestion: string | null;
+    reasoning: string | null;
+    request: { systemMessage: string; userMessage: string; model: string };
+    response: unknown;
+    listUsed: "old" | "new";
+    error?: string;
 }
 
 const REQUIRES_COST_CODE = ["TAH-CA", "KS-CZ", "BN-CZ"];
@@ -96,6 +118,24 @@ const translations = {
         errorLoadFailed: "Failed to load documents data.",
         others: "Others",
         total: "Total",
+        action: "Action",
+        classify: "Classify",
+        classifyAll: "Classify All Missing",
+        classifying: "Classifying...",
+        aiSuggestion: "AI Suggestion",
+        aiDebugPanel: "AI Classification Debug",
+        systemMessage: "System Message",
+        userMessage: "User Message",
+        rawResponse: "Raw Response",
+        reasoning: "AI Reasoning",
+        suggestedCode: "Suggested Code",
+        accept: "Accept",
+        dismiss: "Dismiss",
+        record: "Record",
+        listUsed: "Cost Code List",
+        noSuggestion: "No suggestion returned",
+        batchProgress: "Classifying {current} of {total}...",
+        batchDone: "Classification complete: {done} of {total} classified",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -147,6 +187,24 @@ const translations = {
         errorLoadFailed: "Belge verileri yuklenemedi.",
         others: "Diger",
         total: "Toplam",
+        action: "Islem",
+        classify: "Siniflandir",
+        classifyAll: "Tum Eksikleri Siniflandir",
+        classifying: "Siniflandiriliyor...",
+        aiSuggestion: "AI Onerisi",
+        aiDebugPanel: "AI Siniflandirma Detaylari",
+        systemMessage: "Sistem Mesaji",
+        userMessage: "Kullanici Mesaji",
+        rawResponse: "Ham Yanit",
+        reasoning: "AI Mantigi",
+        suggestedCode: "Onerilen Kod",
+        accept: "Kabul Et",
+        dismiss: "Kapat",
+        record: "Kayit",
+        listUsed: "Masraf Merkezi Listesi",
+        noSuggestion: "Oneri donmedi",
+        batchProgress: "{current} / {total} siniflandiriliyor...",
+        batchDone: "Siniflandirma tamamlandi: {done} / {total} siniflandirildi",
     },
 } as const;
 
@@ -190,6 +248,15 @@ export default function CostCodesPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // AI classification state
+    const [aiResults, setAiResults] = useState<Record<string, AiClassifyResult>>({});
+    const [acceptedCodes, setAcceptedCodes] = useState<Record<string, string>>({});
+    const [classifying, setClassifying] = useState<string | null>(null);
+    const [classifyingAll, setClassifyingAll] = useState(false);
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+    const [aiPanelRecord, setAiPanelRecord] = useState<string | null>(null);
+    const abortRef = useRef(false);
+
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
 
@@ -215,6 +282,8 @@ export default function CostCodesPage() {
         setDateTo("");
         setPage(0);
         setShowMissingOnly(false);
+        setAiResults({});
+        setAcceptedCodes({});
 
         try {
             let url = `/api/documents?year=${year}&includeMissingDocs=true`;
@@ -229,6 +298,117 @@ export default function CostCodesPage() {
             setIsLoading(false);
         }
     }, [year, monthFilter]);
+
+    // Classify a single record
+    const classifyRecord = useCallback(async (record: DocumentRecord) => {
+        setClassifying(record.uniquecode);
+        try {
+            const resp = await fetch("/api/cost-codes/classify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    records: [{
+                        uniquecode: record.uniquecode,
+                        aciklama: record.aciklama,
+                        carifirma: record.carifirma,
+                        islemturu: record.islemturu,
+                        date: record.date,
+                        projekodu: record.projekodu,
+                        source: record.source,
+                    }],
+                }),
+            });
+            const data = await resp.json();
+            if (data.results?.[0]) {
+                setAiResults((prev) => ({
+                    ...prev,
+                    [record.uniquecode]: data.results[0],
+                }));
+                setAiPanelRecord(record.uniquecode);
+            }
+        } catch (err) {
+            setAiResults((prev) => ({
+                ...prev,
+                [record.uniquecode]: {
+                    uniquecode: record.uniquecode,
+                    suggestion: null,
+                    reasoning: null,
+                    request: { systemMessage: "", userMessage: "", model: "deepseek-reasoner" },
+                    response: null,
+                    listUsed: "new",
+                    error: (err as Error).message,
+                },
+            }));
+        } finally {
+            setClassifying(null);
+        }
+    }, []);
+
+    // Batch classify all visible missing records
+    const classifyAllMissing = useCallback(async () => {
+        if (!records) return;
+        abortRef.current = false;
+        setClassifyingAll(true);
+
+        const missingRecords = filteredRecords.filter(
+            (r) =>
+                REQUIRES_COST_CODE.includes(r.islemturu) &&
+                (!r.masrafmerkezi || r.masrafmerkezi.trim() === "") &&
+                !aiResults[r.uniquecode] &&
+                !acceptedCodes[r.uniquecode]
+        );
+
+        setBatchProgress({ current: 0, total: missingRecords.length });
+
+        for (let i = 0; i < missingRecords.length; i++) {
+            if (abortRef.current) break;
+            const record = missingRecords[i];
+            setBatchProgress({ current: i + 1, total: missingRecords.length });
+            setClassifying(record.uniquecode);
+
+            try {
+                const resp = await fetch("/api/cost-codes/classify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        records: [{
+                            uniquecode: record.uniquecode,
+                            aciklama: record.aciklama,
+                            carifirma: record.carifirma,
+                            islemturu: record.islemturu,
+                            date: record.date,
+                            projekodu: record.projekodu,
+                            source: record.source,
+                        }],
+                    }),
+                });
+                const data = await resp.json();
+                if (data.results?.[0]) {
+                    setAiResults((prev) => ({
+                        ...prev,
+                        [record.uniquecode]: data.results[0],
+                    }));
+                }
+            } catch (err) {
+                setAiResults((prev) => ({
+                    ...prev,
+                    [record.uniquecode]: {
+                        uniquecode: record.uniquecode,
+                        suggestion: null,
+                        reasoning: null,
+                        request: { systemMessage: "", userMessage: "", model: "deepseek-reasoner" },
+                        response: null,
+                        listUsed: "new",
+                        error: (err as Error).message,
+                    },
+                }));
+            }
+        }
+
+        setClassifying(null);
+        setClassifyingAll(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [records, aiResults, acceptedCodes]);
 
     // Context subtitle
     const contextLabel = useMemo(() => {
@@ -336,6 +516,10 @@ export default function CostCodesPage() {
         setPage(0);
     }, []);
 
+    // Current AI debug panel result
+    const aiPanelResult = aiPanelRecord ? aiResults[aiPanelRecord] : null;
+    const aiPanelRecordData = aiPanelRecord ? records?.find((r) => r.uniquecode === aiPanelRecord) : null;
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
             <main className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
@@ -416,6 +600,30 @@ export default function CostCodesPage() {
                             </>
                         )}
                     </Button>
+
+                    {/* Classify All Missing button */}
+                    {records && (
+                        <Button
+                            onClick={classifyingAll ? () => { abortRef.current = true; } : classifyAllMissing}
+                            disabled={classifying !== null && !classifyingAll}
+                            variant={classifyingAll ? "destructive" : "outline"}
+                            className={`flex-1 sm:flex-none sm:min-w-[200px] h-10 ${!classifyingAll ? "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/30" : ""}`}
+                        >
+                            {classifyingAll ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    {t.batchProgress
+                                        .replace("{current}", String(batchProgress.current))
+                                        .replace("{total}", String(batchProgress.total))}
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-4 w-4 mr-2" />
+                                    {t.classifyAll}
+                                </>
+                            )}
+                        </Button>
+                    )}
                 </div>
 
                 {/* Error */}
@@ -451,6 +659,13 @@ export default function CostCodesPage() {
                             {metrics.requires > 0 && (
                                 <Badge variant="outline" className="text-xs px-3 py-1.5">
                                     {t.completion}: <span className="font-bold ml-1">{Math.round((metrics.filled / metrics.requires) * 100)}%</span>
+                                </Badge>
+                            )}
+                            {/* AI classified count */}
+                            {Object.keys(aiResults).length > 0 && (
+                                <Badge variant="outline" className="text-xs px-3 py-1.5 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/20">
+                                    <Sparkles className="h-3 w-3 mr-1" />
+                                    AI: <span className="font-bold ml-1">{Object.values(aiResults).filter((r) => r.suggestion).length}</span>
                                 </Badge>
                             )}
                         </div>
@@ -601,7 +816,7 @@ export default function CostCodesPage() {
 
                     {/* Table */}
                     <div className="rounded-b-xl border border-zinc-200 dark:border-zinc-800 border-t-0 bg-white dark:bg-zinc-900 shadow-sm overflow-auto max-h-[calc(100vh-200px)]">
-                        <table className="w-full text-sm" style={{ minWidth: 1400 }}>
+                        <table className="w-full text-sm" style={{ minWidth: 1500 }}>
                             <thead className="sticky top-0 z-30 bg-zinc-50 dark:bg-zinc-900">
                                 <tr className="border-b border-zinc-200 dark:border-zinc-800">
                                     <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400 w-12 sticky left-0 z-40 bg-zinc-50 dark:bg-zinc-900">#</th>
@@ -618,6 +833,7 @@ export default function CostCodesPage() {
                                     <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.outgoing}</th>
                                     <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.currency}</th>
                                     <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{t.cost}</th>
+                                    <th className="px-4 py-3 text-center font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap w-16">{t.action}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -626,11 +842,19 @@ export default function CostCodesPage() {
                                     const needsCostCode = REQUIRES_COST_CODE.includes(record.islemturu);
                                     const hasCostCode = record.masrafmerkezi && record.masrafmerkezi.trim() !== "";
                                     const isMissing = needsCostCode && !hasCostCode;
+                                    const aiResult = aiResults[record.uniquecode];
+                                    const accepted = acceptedCodes[record.uniquecode];
+                                    const isClassifying = classifying === record.uniquecode;
+
+                                    // Display code: accepted AI suggestion > DB value > empty
+                                    const displayCode = accepted || (hasCostCode ? record.masrafmerkezi : null);
+                                    const isAiSuggested = !!(accepted || (aiResult?.suggestion && !hasCostCode));
+
                                     return (
                                         <tr
                                             key={record.uniquecode}
                                             className={`border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors ${
-                                                isMissing ? "bg-rose-50/50 dark:bg-rose-950/10" : ""
+                                                isMissing && !accepted ? "bg-rose-50/50 dark:bg-rose-950/10" : ""
                                             }`}
                                         >
                                             <td className="px-4 py-3 text-zinc-400 dark:text-zinc-500 tabular-nums sticky left-0 z-20 bg-inherit">{rowNum}</td>
@@ -646,7 +870,7 @@ export default function CostCodesPage() {
                                                 {record.partner ? (
                                                     <Badge variant="outline" className="text-xs">{record.partner}</Badge>
                                                 ) : (
-                                                    <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 max-w-[200px] truncate text-zinc-600 dark:text-zinc-400">
@@ -668,42 +892,78 @@ export default function CostCodesPage() {
                                                         {record.islemturu}
                                                     </Badge>
                                                 ) : (
-                                                    <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
                                                 )}
                                             </td>
-                                            <td className={`px-4 py-3 font-mono text-xs ${
-                                                isMissing
-                                                    ? "text-rose-600 dark:text-rose-400 font-semibold"
-                                                    : hasCostCode
-                                                        ? "text-emerald-600 dark:text-emerald-400"
-                                                        : "text-zinc-300 dark:text-zinc-700"
-                                            }`}>
-                                                {hasCostCode ? record.masrafmerkezi : isMissing ? "—" : "—"}
+                                            <td className="px-4 py-3">
+                                                {displayCode ? (
+                                                    <button
+                                                        onClick={() => { if (aiResult) setAiPanelRecord(record.uniquecode); }}
+                                                        className={`font-mono text-xs inline-flex items-center gap-1 ${
+                                                            isAiSuggested
+                                                                ? "text-violet-600 dark:text-violet-400 font-semibold cursor-pointer hover:underline"
+                                                                : "text-emerald-600 dark:text-emerald-400"
+                                                        }`}
+                                                    >
+                                                        {isAiSuggested && <Sparkles className="h-3 w-3" />}
+                                                        {displayCode}
+                                                    </button>
+                                                ) : aiResult?.suggestion ? (
+                                                    <button
+                                                        onClick={() => setAiPanelRecord(record.uniquecode)}
+                                                        className="font-mono text-xs inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 font-semibold cursor-pointer hover:underline"
+                                                    >
+                                                        <Sparkles className="h-3 w-3" />
+                                                        {aiResult.suggestion}
+                                                    </button>
+                                                ) : isMissing ? (
+                                                    <span className="text-rose-600 dark:text-rose-400 font-semibold">&mdash;</span>
+                                                ) : (
+                                                    <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-emerald-600 dark:text-emerald-400">
                                                 {Math.abs(Number(record.giris_tutar) || 0) > 0
                                                     ? Math.abs(Number(record.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                                    : <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    : <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
                                                 }
                                             </td>
                                             <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-rose-600 dark:text-rose-400">
                                                 {Math.abs(Number(record.cikis_tutar) || 0) > 0
                                                     ? Math.abs(Number(record.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                                    : <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                                    : <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>
                                                 }
                                             </td>
                                             <td className="px-4 py-3 text-center text-xs whitespace-nowrap">
-                                                {record.parabirimi || <span className="text-zinc-300 dark:text-zinc-700">—</span>}
+                                                {record.parabirimi || <span className="text-zinc-300 dark:text-zinc-700">&mdash;</span>}
                                             </td>
                                             <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                                                 {Number(record.cost) || 0}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {isMissing && !accepted && (
+                                                    <button
+                                                        onClick={() => classifyRecord(record)}
+                                                        disabled={isClassifying || classifyingAll}
+                                                        className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                        title={t.classify}
+                                                    >
+                                                        {isClassifying ? (
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        ) : aiResult ? (
+                                                            <Search className="h-3.5 w-3.5" />
+                                                        ) : (
+                                                            <Sparkles className="h-3.5 w-3.5" />
+                                                        )}
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );
                                 })}
                                 {pagedRecords.length === 0 && (
                                     <tr>
-                                        <td colSpan={14} className="px-4 py-12 text-center text-zinc-400">
+                                        <td colSpan={15} className="px-4 py-12 text-center text-zinc-400">
                                             {t.noRecords}
                                         </td>
                                     </tr>
@@ -740,7 +1000,142 @@ export default function CostCodesPage() {
                     </div>
                     </>
                 )}
+
+                {/* AI Debug Panel Dialog */}
+                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) setAiPanelRecord(null); }}>
+                    <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Sparkles className="h-5 w-5 text-violet-600" />
+                                {t.aiDebugPanel}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {aiPanelRecordData?.uniquecode} &mdash; {aiPanelRecordData?.aciklama}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {aiPanelResult && (
+                            <div className="space-y-4">
+                                {/* Record info */}
+                                <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-zinc-50 dark:bg-zinc-900 space-y-1">
+                                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{t.record}</div>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                        <div><span className="text-zinc-500">{t.code}:</span> <span className="font-mono">{aiPanelRecordData?.uniquecode}</span></div>
+                                        <div><span className="text-zinc-500">{t.date}:</span> {aiPanelRecordData?.date ? formatDate(aiPanelRecordData.date) : ""}</div>
+                                        <div><span className="text-zinc-500">{t.vendor}:</span> {aiPanelRecordData?.carifirma}</div>
+                                        <div><span className="text-zinc-500">{t.transType}:</span> {aiPanelRecordData?.islemturu}</div>
+                                        <div className="col-span-2"><span className="text-zinc-500">{t.description}:</span> {aiPanelRecordData?.aciklama}</div>
+                                    </div>
+                                </div>
+
+                                {/* Suggestion */}
+                                <div className={`rounded-lg border p-3 ${
+                                    aiPanelResult.suggestion
+                                        ? "border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/20"
+                                        : aiPanelResult.error
+                                            ? "border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/20"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900"
+                                }`}>
+                                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">{t.suggestedCode}</div>
+                                    {aiPanelResult.suggestion ? (
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-mono text-lg font-bold text-violet-700 dark:text-violet-300">
+                                                {aiPanelResult.suggestion}
+                                            </span>
+                                            <Badge variant="outline" className="text-xs">
+                                                {t.listUsed}: {aiPanelResult.listUsed === "old" ? "GIDER GRUPLARI 2022" : "IQ COST CODES"}
+                                            </Badge>
+                                        </div>
+                                    ) : (
+                                        <span className="text-rose-600 dark:text-rose-400 text-sm">
+                                            {aiPanelResult.error || t.noSuggestion}
+                                        </span>
+                                    )}
+
+                                    {/* Accept / Dismiss */}
+                                    {aiPanelResult.suggestion && !acceptedCodes[aiPanelResult.uniquecode] && (
+                                        <div className="flex gap-2 mt-3">
+                                            <Button
+                                                size="sm"
+                                                onClick={() => {
+                                                    setAcceptedCodes((prev) => ({ ...prev, [aiPanelResult.uniquecode]: aiPanelResult.suggestion! }));
+                                                    setAiPanelRecord(null);
+                                                }}
+                                                className="bg-violet-600 hover:bg-violet-700 text-white"
+                                            >
+                                                <Check className="h-4 w-4 mr-1" />
+                                                {t.accept}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setAiPanelRecord(null)}
+                                            >
+                                                <X className="h-4 w-4 mr-1" />
+                                                {t.dismiss}
+                                            </Button>
+                                        </div>
+                                    )}
+                                    {acceptedCodes[aiPanelResult.uniquecode] && (
+                                        <div className="mt-2">
+                                            <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
+                                                <Check className="h-3 w-3 mr-1" />
+                                                Accepted
+                                            </Badge>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* AI Reasoning */}
+                                {aiPanelResult.reasoning && (
+                                    <CollapsibleSection title={t.reasoning} defaultOpen>
+                                        <pre className="text-xs whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-400 max-h-[300px] overflow-y-auto p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                            {aiPanelResult.reasoning}
+                                        </pre>
+                                    </CollapsibleSection>
+                                )}
+
+                                {/* User Message */}
+                                <CollapsibleSection title={t.userMessage}>
+                                    <pre className="text-xs whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-400 max-h-[200px] overflow-y-auto p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                        {aiPanelResult.request.userMessage}
+                                    </pre>
+                                </CollapsibleSection>
+
+                                {/* System Message */}
+                                <CollapsibleSection title={t.systemMessage}>
+                                    <pre className="text-xs whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-400 max-h-[300px] overflow-y-auto p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                        {aiPanelResult.request.systemMessage}
+                                    </pre>
+                                </CollapsibleSection>
+
+                                {/* Raw Response */}
+                                <CollapsibleSection title={t.rawResponse}>
+                                    <pre className="text-xs whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-400 max-h-[300px] overflow-y-auto p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                        {JSON.stringify(aiPanelResult.response, null, 2)}
+                                    </pre>
+                                </CollapsibleSection>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
             </main>
+        </div>
+    );
+}
+
+function CollapsibleSection({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <button
+                onClick={() => setOpen(!open)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+            >
+                {title}
+                {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {open && <div className="px-3 pb-3">{children}</div>}
         </div>
     );
 }
