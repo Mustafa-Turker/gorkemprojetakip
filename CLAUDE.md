@@ -11,6 +11,7 @@ Internal web application for GORKEM company to display live accounting/cost data
 - **Data Fetching**: SWR (client-side) with 60s deduping interval
 - **Database**: PostgreSQL via `pg` driver through Cloudflare Hyperdrive
 - **Hosting**: Cloudflare Workers via @opennextjs/cloudflare
+- **PDF**: pdfjs-dist v5.5.207 (rendering/thumbnails), pdf-lib (page extraction), jsPDF + jspdf-autotable (PDF export)
 - **Icons**: lucide-react
 - **Fonts**: Geist Sans + Geist Mono
 
@@ -27,6 +28,8 @@ app/
 │   ├── balances/page.tsx # Placeholder - "Coming Soon"
 │   ├── study/page.tsx    # Placeholder - "Coming Soon"
 │   ├── issues/page.tsx   # Document management - SharePoint check/upload with filters
+│   ├── upload/page.tsx   # Split-pane PDF upload workflow (day-scoped records + PDF page extraction)
+│   ├── cost-codes/page.tsx # Cost code (masraf merkezi) tracking — find missing cost codes
 │   ├── error.tsx         # Error boundary
 │   └── global-error.tsx  # Global error boundary
 ├── globals.css           # Tailwind config + CSS variables (light/dark)
@@ -36,9 +39,10 @@ app/
 │   │   └── logout/route.ts  # POST - clears auth cookie
 │   ├── costs/route.js       # GET - fetches from PostgreSQL view
 │   └── documents/
-│       ├── route.js         # GET - fetches document records from view_muhasebe_konsolide
-│       ├── check/route.js   # POST - checks document existence in SharePoint via Graph API
-│       └── upload/route.js  # POST - uploads PDF files to SharePoint
+│       ├── route.js         # GET - fetches document records from view_muhasebe_konsolide (supports ?includeMissingDocs=true to skip doc filter)
+│       ├── check/route.js     # POST - checks document existence in SharePoint via Graph API
+│       ├── thumbnail/route.js # GET - fetches SharePoint document thumbnail via Graph API
+│       └── upload/route.js    # POST - uploads PDF files to SharePoint, returns metadata (id, timestamps, createdBy)
 components/
 ├── dashboard/
 │   ├── NavHeader.tsx         # Sticky nav with sliding pill indicator, mobile menu, logout
@@ -67,10 +71,13 @@ patches/
 - Per-request `Client` connection (Workers can't share I/O across requests)
 - **Cost dashboard view**: `public.view_proje_maliyet_ozeti` — columns: `rapor_yili`, `proje_kodu`, `source`, `kategori_lvl_1`, `kategori_lvl_2`, `toplam_tutar`
   - Values are inverted (`-1 * toplam_tutar`) in the API query to fix sign conventions
-- **Documents view**: `public.view_muhasebe_konsolide` — columns used: `uniquecode`, `doc`, `date`, `projekodu`, `source`, `carifirma`, `aciklama`, `usd_degeri`, `partner`, `islemturu`, `cost`
+- **Documents view**: `public.view_muhasebe_konsolide` — columns used: `uniquecode`, `doc`, `date`, `projekodu`, `source`, `carifirma`, `aciklama`, `usd_degeri`, `partner`, `islemturu`, `cost`, `giris_tutar`, `cikis_tutar`, `parabirimi`, `masrafmerkezi`
   - `doc` column contains full SharePoint URLs for PDF documents
   - `islemturu` is a transaction type classification (TAH-CA, BN-CA, BN-CZ, KS-CA, KS-CZ, or blank)
   - `cost` is a numeric classification (not a dollar amount) — used for filtering cost/payment-related records
+  - `giris_tutar` / `cikis_tutar` are incoming/outgoing amounts in local currency (`parabirimi`). Values can be negative in DB — use `Math.abs()` for display.
+  - `parabirimi` is the currency code (e.g., USD, TRY, IQD)
+  - `masrafmerkezi` is a 4-level cost code assigned by accountants. Required when `islemturu` is TAH-CA, KS-CZ, or BN-CZ.
 
 ## Authentication
 
@@ -104,7 +111,7 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
 - **Auth**: Microsoft Graph API with client credentials flow (OAuth2)
 - **Drive**: "Documentation" library on `gorkem.sharepoint.com`
 - **Check flow**: `searchBasedCheck()` groups doc URLs by exact parent folder path, then uses `children` endpoint (not `search`) to list each folder's contents. Returns `{ results, stats }` with per-scope metadata and aggregate counts. Uses `children` instead of `search` because Graph API search index misses files in large folders.
-- **Upload flow**: Simple PUT upload via Graph API (`< 4MB`), auto-creates folders
+- **Upload flow**: Simple PUT upload via Graph API (`< 4MB`), auto-creates folders, supports overwrite of existing files
 - **Credentials**: `SP_TENANT_ID`, `SP_CLIENT_ID`, `SP_CLIENT_SECRET`, `SP_DRIVE_ID` in wrangler.jsonc `vars`
 
 ## Issues Page (`/issues`)
@@ -115,7 +122,7 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
   - **Urgent 1 / Acil 1**: Combo filter — Partner=GORKEM + Cost>0 + Missing + Above $10K
   - **Urgent 2 / Acil 2**: Combo filter — Partner=GORKEM + Cost>0 + Missing + $5K-$10K
   - Show Missing, Above $10K, $5K-$10K, Below $5K (amounts are negative in DB)
-- **Language**: EN/TR toggle with full translations via static `translations` object
+- **Language**: EN/TR toggle with full translations via static `translations` object (default: TR)
 - **Summary cards**: 4 cards (Total Records, Checked, Uploaded, Missing) with partner breakdown rows (GORKEM, RSCC, Others, Total). Each row has 3 sub-columns: Head Office (ANK for GORKEM, ERB for RSCC), BAG (common), Total. Missing card shows `(XX%)` ratios per sub-column.
   - **Cost checkbox**: "Show only Cost & Payment Related" checkbox above cards filters card metrics to records with `cost > 0` (does not affect table).
 - **Table columns**: #, Date, Code, Project, Source, Partner, Vendor (hidden lg), Description (hidden xl), Amount, Trans. Type (hidden lg), Cost (hidden lg), Status, Action
@@ -124,6 +131,37 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
 - **Sticky layout**: Filter bar uses `sticky top-16 z-20`, thead uses `sticky z-10` with dynamic `top` based on filter bar height. Table wrapper uses `overflow-x-clip` (not `overflow-x-auto`) to avoid breaking sticky positioning.
 - **Partner values**: Can be GORKEM, RSCC, blank, or other. Blank values use `__blank` sentinel for radix SelectItem compatibility.
 - **Source mapping**: ANK = Ankara (GORKEM HQ), ERB = Erbil (RSCC HQ), BAG = Baghdad (shared)
+- **PDF export**: Uses jsPDF + jspdf-autotable. Loads DejaVu Sans TTF from jsdelivr CDN for Turkish character support, with ASCII sanitize fallback if font fails to load. Columns: #, Date, Code, Project, Source, Partner, Vendor, Description, Giris, Cikis, Trans. Type, Status (Yuklu/Eksik with colors).
+
+## Upload Page (`/upload`)
+
+- **Purpose**: Efficient daily workflow — load a multi-page PDF, select specific pages per record, extract & upload to SharePoint
+- **Language**: EN/TR toggle (default: TR)
+- **Date selection**: Year + Month + Day (all required) — fetches day-scoped records from `/api/documents?year=X&month=Y&day=Z`
+- **Layout**: Split-pane with fixed height `h-[calc(100vh-280px)]`. Left panel (40%) = scrollable record cards. Right panel (60%) = PDF operations (sticky removed, internal scroll).
+- **Left panel — Record cards**: Compact single-row cards showing status icon, uniquecode, badges (project/source/partner), islemturu, giris/cikis amounts with parabirimi, eye button (details dialog), document preview button (for uploaded records)
+- **Right panel — PDF operations**:
+  - Scrollable area (top): PDF drop zone (drag & drop or click, compact inline row when file loaded), selected record card (uniquecode, vendor, amounts, target filename), PDF page thumbnails rendered via pdfjs-dist (canvas at 0.4x scale) with view button for high-res preview (2.0x, dialog at 95vw width), page range text input (e.g., "1-3, 5, 7-9") with `parsePageRange()` helper
+  - Pinned bottom bar: Upload button — uses pdf-lib to extract selected pages, POST to `/api/documents/upload`. Always visible, separated by border-t from scrollable content above.
+- **Overwrite support**: Upload button stays enabled for already-uploaded documents, allowing re-upload (SharePoint PUT overwrites automatically)
+- **Post-upload metadata**: Upload API returns SharePoint item metadata (`id`, `createdDateTime`, `lastModifiedDateTime`, `createdBy`). Client populates `fileMetadata` on success so the document preview icon (FileText) appears immediately without re-check.
+- **Document preview**: For records with existing uploads, FileText icon opens a dialog that fetches SharePoint thumbnail via `/api/documents/thumbnail` and links to original document
+- **Activity log**: Collapsed by default — user can expand manually. Not auto-opened after check completes.
+- **SharePoint auto-check**: Same batched check as Issues page (BATCH_SIZE=10000) — runs automatically after data fetch
+
+## Cost Codes Page (`/cost-codes`)
+
+- **Purpose**: Track and manage missing cost codes (masraf merkezi) in accounting records
+- **Language**: EN/TR toggle (default: TR)
+- **Date selection**: Year + Month (with "All Months" option) — fetches records via `/api/documents?year=X&month=Y&includeMissingDocs=true`
+- **No SharePoint check**: This page only displays DB records, no document checking/upload
+- **Cost code rule**: Records with `islemturu` in (TAH-CA, KS-CZ, BN-CZ) REQUIRE a cost code (`masrafmerkezi`)
+- **Quick filter**: "Show Missing Cost Codes" — filters to records that require but are missing cost codes
+- **Summary badges**: Total Records, Requires Cost Code, Missing, Filled, Completion %
+- **Table columns**: #, Date, Code, Project, Source, Partner, Vendor, Description, Trans. Type, Cost Code, In, Out, Currency, Cost
+- **Visual indicators**: Missing cost code rows highlighted in rose; transaction types requiring codes shown in amber badges; filled cost codes in green
+- **Filters**: Source, Project, Partner, Trans. Type, Cost (client-side multi-select), date range, text search
+- **SharePoint Excel files**: Cost codes map to `CostCode` column in `Table_KasaHareketleri` table in `KASAHAREKETLERI` sheet of `.xlsm` files at `SUBELER/GRJV/COMMON/06.ACCOUNTING/01.CASH-REPORTS/{year}/{month}/{day}/{source}/GRJV_CashReport_{source}_{date}.xlsm`
 
 ## Key Patterns
 
