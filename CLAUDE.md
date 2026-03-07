@@ -38,6 +38,8 @@ app/
 │   │   ├── login/route.ts   # POST - cookie-based auth
 │   │   └── logout/route.ts  # POST - clears auth cookie
 │   ├── costs/route.js       # GET - fetches from PostgreSQL view
+│   ├── cost-codes/
+│   │   └── classify/route.js  # POST - AI cost code classification via DeepSeek Reasoner
 │   └── documents/
 │       ├── route.js         # GET - fetches document records from view_muhasebe_konsolide (supports ?includeMissingDocs=true to skip doc filter)
 │       ├── check/route.js     # POST - checks document existence in SharePoint via Graph API
@@ -106,6 +108,8 @@ USERS={"username":"password"}
 
 For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hyperdrive handles the DB connection.
 
+- `DEEPSEEK_API_KEY` — API key for DeepSeek Reasoner (AI cost code classification), set in wrangler.jsonc `vars`
+
 ## SharePoint Integration
 
 - **Auth**: Microsoft Graph API with client credentials flow (OAuth2)
@@ -159,8 +163,23 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
 - **Quick filter**: "Show Missing Cost Codes" — filters to records that require but are missing cost codes
 - **Summary badges**: Total Records, Requires Cost Code, Missing, Filled, Completion %
 - **Table columns**: #, Date, Code, Project, Source, Partner, Vendor, Description, Trans. Type, Cost Code, In, Out, Currency, Cost
-- **Visual indicators**: Missing cost code rows highlighted in rose; transaction types requiring codes shown in amber badges; filled cost codes in green
+- **Visual indicators**: Missing cost code rows highlighted in rose; transaction types requiring codes shown in amber badges; filled cost codes in green; AI-suggested codes in violet with Sparkles icon
 - **Filters**: Source, Project, Partner, Trans. Type, Cost (client-side multi-select), date range, text search
+- **AI Classification**: DeepSeek API suggests cost codes for missing records
+  - **Models**: `deepseek-reasoner` (primary) with automatic fallback to `deepseek-chat` on failure
+  - **Pricing**: reasoner — $0.028/1M cache hit, $0.28/1M cache miss, $0.42/1M output; chat — $0.007/1M cache hit, $0.07/1M cache miss, $0.28/1M output
+  - Per-row Sparkles button in cost code column calls `/api/cost-codes/classify`; after result, Search icon opens debug dialog
+  - "Classify All Missing" button batch-processes all visible filtered missing records sequentially (with abort)
+  - **Concurrent requests**: Multiple items can be classified in parallel; duplicate requests for the same item are blocked. Uses `Set<string>` state to track in-flight items.
+  - **Duration**: Measured client-side (full round-trip including network + SP list fetch + DeepSeek API call)
+  - **Table loading state**: Shows spinner + "Siniflandiriliyor..." text per-row during classification; panel is always closable, process continues in background
+  - Debug dialog shows: record info, suggested code with model/duration/fallback badges, AI reasoning, API cost breakdown (tokens + dollars), system message, user message, raw API response
+  - **Post-result actions**: Accept, Enter Manually (inline text input), Retry AI, Retry with Info (textarea for additional context sent in re-request)
+  - **Post-accept actions**: Change (manual edit), Retry AI, Retry with Info
+  - Accept button stores suggestion in local state (visual only, no DB/Excel write yet)
+  - Two SharePoint lists for valid codes: `GIDER GRUPLARI 2022` (old, `XX.XXXXX` format, before 10/2024) and `IQ COST CODES` (new, `XX.XX.XX.XX` format, from 10/2024)
+  - SP Site ID: `gorkem.sharepoint.com,a16ee5d5-798f-41f0-9bf4-79e7401c77d0,94f7370c-3990-4c58-951a-766976013138`
+  - System prompt includes full cost code list + mandatory rules (fuel, handtools, transport, etc.)
 - **SharePoint Excel files**: Cost codes map to `CostCode` column in `Table_KasaHareketleri` table in `KASAHAREKETLERI` sheet of `.xlsm` files at `SUBELER/GRJV/COMMON/06.ACCOUNTING/01.CASH-REPORTS/{year}/{month}/{day}/{source}/GRJV_CashReport_{source}_{date}.xlsm`
 
 ## Key Patterns
