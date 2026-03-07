@@ -303,7 +303,7 @@ export default function CostCodesPage() {
     // AI classification state
     const [aiResults, setAiResults] = useState<Record<string, AiClassifyResult>>({});
     const [acceptedCodes, setAcceptedCodes] = useState<Record<string, string>>({});
-    const [classifying, setClassifying] = useState<string | null>(null);
+    const [classifyingSet, setClassifyingSet] = useState<Set<string>>(new Set());
     const [classifyingAll, setClassifyingAll] = useState(false);
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const [aiPanelRecord, setAiPanelRecord] = useState<string | null>(null);
@@ -357,8 +357,7 @@ export default function CostCodesPage() {
 
     // Classify a single record
     const classifyRecord = useCallback(async (record: DocumentRecord, additionalInfo?: string) => {
-        setClassifying(record.uniquecode);
-        setAiPanelRecord(record.uniquecode);
+        setClassifyingSet((prev) => new Set(prev).add(record.uniquecode));
         const startTime = Date.now();
         try {
             const payload: Record<string, string> = {
@@ -400,7 +399,7 @@ export default function CostCodesPage() {
                 },
             }));
         } finally {
-            setClassifying(null);
+            setClassifyingSet((prev) => { const next = new Set(prev); next.delete(record.uniquecode); return next; });
         }
     }, []);
 
@@ -424,7 +423,8 @@ export default function CostCodesPage() {
             if (abortRef.current) break;
             const record = missingRecords[i];
             setBatchProgress({ current: i + 1, total: missingRecords.length });
-            setClassifying(record.uniquecode);
+            setClassifyingSet((prev) => new Set(prev).add(record.uniquecode));
+            const startTime = Date.now();
 
             try {
                 const resp = await fetch("/api/cost-codes/classify", {
@@ -443,10 +443,11 @@ export default function CostCodesPage() {
                     }),
                 });
                 const data = await resp.json();
+                const clientDurationMs = Date.now() - startTime;
                 if (data.results?.[0]) {
                     setAiResults((prev) => ({
                         ...prev,
-                        [record.uniquecode]: data.results[0],
+                        [record.uniquecode]: { ...data.results[0], durationMs: clientDurationMs },
                     }));
                 }
             } catch (err) {
@@ -459,13 +460,15 @@ export default function CostCodesPage() {
                         request: { systemMessage: "", userMessage: "", model: "deepseek-reasoner" },
                         response: null,
                         listUsed: "new",
+                        durationMs: Date.now() - startTime,
                         error: (err as Error).message,
                     },
                 }));
+            } finally {
+                setClassifyingSet((prev) => { const next = new Set(prev); next.delete(record.uniquecode); return next; });
             }
         }
 
-        setClassifying(null);
         setClassifyingAll(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [records, aiResults, acceptedCodes]);
@@ -913,7 +916,7 @@ export default function CostCodesPage() {
                                     const isMissing = needsCostCode && !hasCostCode;
                                     const aiResult = aiResults[record.uniquecode];
                                     const accepted = acceptedCodes[record.uniquecode];
-                                    const isClassifying = classifying === record.uniquecode;
+                                    const isClassifying = classifyingSet.has(record.uniquecode);
 
                                     // Display code: accepted AI suggestion > DB value > empty
                                     const displayCode = accepted || (hasCostCode ? record.masrafmerkezi : null);
@@ -1075,7 +1078,7 @@ export default function CostCodesPage() {
                 )}
 
                 {/* AI Debug Panel Dialog */}
-                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open && !classifying) { setAiPanelRecord(null); setEditingCode(null); setRetryWithInfo(null); } }}>
+                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) { setAiPanelRecord(null); setEditingCode(null); setRetryWithInfo(null); } }}>
                     <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1088,7 +1091,7 @@ export default function CostCodesPage() {
                         </DialogHeader>
 
                         {/* Loading indicator when classifying */}
-                        {aiPanelRecord && classifying === aiPanelRecord && (
+                        {aiPanelRecord && classifyingSet.has(aiPanelRecord) && (
                             <div className="flex items-center gap-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 p-4">
                                 <Loader2 className="h-5 w-5 animate-spin text-violet-600 dark:text-violet-400" />
                                 <span className="text-sm text-violet-700 dark:text-violet-300 font-medium">{t.classifying}</span>
@@ -1232,7 +1235,7 @@ export default function CostCodesPage() {
                                             <Button
                                                 size="sm"
                                                 variant="outline"
-                                                disabled={classifying !== null}
+                                                disabled={classifyingSet.has(aiPanelResult.uniquecode)}
                                                 onClick={() => {
                                                     setAcceptedCodes((prev) => {
                                                         const next = { ...prev };
@@ -1312,7 +1315,7 @@ export default function CostCodesPage() {
                                             <div className="flex gap-2">
                                                 <Button
                                                     size="sm"
-                                                    disabled={!retryInfoText.trim() || classifying !== null}
+                                                    disabled={!retryInfoText.trim() || classifyingSet.has(aiPanelResult.uniquecode)}
                                                     onClick={() => {
                                                         const info = retryInfoText.trim();
                                                         setRetryWithInfo(null);
