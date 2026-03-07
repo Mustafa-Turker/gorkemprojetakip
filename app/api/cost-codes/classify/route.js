@@ -124,6 +124,7 @@ function buildUserMessage(record) {
     if (record.islemturu) parts.push(`Transaction Type: ${record.islemturu}`);
     if (record.projekodu) parts.push(`Project: ${record.projekodu}`);
     if (record.source) parts.push(`Source: ${record.source}`);
+    if (record.additionalInfo) parts.push(`\nAdditional context from the user: ${record.additionalInfo}`);
     return parts.join("\n");
 }
 

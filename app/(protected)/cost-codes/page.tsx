@@ -158,6 +158,9 @@ const translations = {
         changeCode: "Change",
         manualEntry: "Enter Manually",
         retryAi: "Retry AI",
+        retryWithInfo: "Retry with Info",
+        retryInfoPlaceholder: "Add context to help AI classify better (e.g. 'this is a fuel purchase for company car')...",
+        sendRetry: "Send",
         saveCode: "Save",
         cancelEdit: "Cancel",
         totalApiCost: "Total API Cost",
@@ -239,6 +242,9 @@ const translations = {
         changeCode: "Degistir",
         manualEntry: "Manuel Gir",
         retryAi: "AI Tekrar",
+        retryWithInfo: "Bilgi ile Tekrar",
+        retryInfoPlaceholder: "AI'nin daha iyi siniflandirmasi icin ek bilgi girin (orn. 'sirket araci icin yakit alimi')...",
+        sendRetry: "Gonder",
         saveCode: "Kaydet",
         cancelEdit: "Iptal",
         totalApiCost: "Toplam API Maliyeti",
@@ -294,6 +300,8 @@ export default function CostCodesPage() {
     const [aiPanelRecord, setAiPanelRecord] = useState<string | null>(null);
     const [editingCode, setEditingCode] = useState<string | null>(null); // uniquecode of record being manually edited
     const [editingValue, setEditingValue] = useState("");
+    const [retryWithInfo, setRetryWithInfo] = useState<string | null>(null); // uniquecode showing retry-with-info textarea
+    const [retryInfoText, setRetryInfoText] = useState("");
     const abortRef = useRef(false);
 
     // Sticky filter bar ref
@@ -339,23 +347,24 @@ export default function CostCodesPage() {
     }, [year, monthFilter]);
 
     // Classify a single record
-    const classifyRecord = useCallback(async (record: DocumentRecord) => {
+    const classifyRecord = useCallback(async (record: DocumentRecord, additionalInfo?: string) => {
         setClassifying(record.uniquecode);
         try {
+            const payload: Record<string, string> = {
+                uniquecode: record.uniquecode,
+                aciklama: record.aciklama,
+                carifirma: record.carifirma,
+                islemturu: record.islemturu,
+                date: record.date,
+                projekodu: record.projekodu,
+                source: record.source,
+            };
+            if (additionalInfo) payload.additionalInfo = additionalInfo;
+
             const resp = await fetch("/api/cost-codes/classify", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    records: [{
-                        uniquecode: record.uniquecode,
-                        aciklama: record.aciklama,
-                        carifirma: record.carifirma,
-                        islemturu: record.islemturu,
-                        date: record.date,
-                        projekodu: record.projekodu,
-                        source: record.source,
-                    }],
-                }),
+                body: JSON.stringify({ records: [payload] }),
             });
             const data = await resp.json();
             if (data.results?.[0]) {
@@ -992,10 +1001,16 @@ export default function CostCodesPage() {
                                             <td className="px-4 py-3 text-center">
                                                 {isMissing && !accepted && (
                                                     <button
-                                                        onClick={() => classifyRecord(record)}
+                                                        onClick={() => {
+                                                            if (aiResult && !isClassifying) {
+                                                                setAiPanelRecord(record.uniquecode);
+                                                            } else if (!isClassifying) {
+                                                                classifyRecord(record);
+                                                            }
+                                                        }}
                                                         disabled={isClassifying || classifyingAll}
                                                         className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                                        title={t.classify}
+                                                        title={aiResult ? t.aiDebugPanel : t.classify}
                                                     >
                                                         {isClassifying ? (
                                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1051,7 +1066,7 @@ export default function CostCodesPage() {
                 )}
 
                 {/* AI Debug Panel Dialog */}
-                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) { setAiPanelRecord(null); setEditingCode(null); } }}>
+                <Dialog open={!!aiPanelRecord} onOpenChange={(open) => { if (!open) { setAiPanelRecord(null); setEditingCode(null); setRetryWithInfo(null); } }}>
                     <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1107,9 +1122,9 @@ export default function CostCodesPage() {
                                         </span>
                                     )}
 
-                                    {/* Not yet accepted: Accept / Dismiss */}
-                                    {aiPanelResult.suggestion && !acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && (
-                                        <div className="flex gap-2 mt-3">
+                                    {/* Not yet accepted: Accept / Manual / Retry with Info / Dismiss */}
+                                    {aiPanelResult.suggestion && !acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && retryWithInfo !== aiPanelResult.uniquecode && (
+                                        <div className="flex flex-wrap gap-2 mt-3">
                                             <Button
                                                 size="sm"
                                                 onClick={() => {
@@ -1134,6 +1149,17 @@ export default function CostCodesPage() {
                                             <Button
                                                 size="sm"
                                                 variant="outline"
+                                                onClick={() => {
+                                                    setRetryWithInfo(aiPanelResult.uniquecode);
+                                                    setRetryInfoText("");
+                                                }}
+                                            >
+                                                <RotateCcw className="h-4 w-4 mr-1" />
+                                                {t.retryWithInfo}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
                                                 onClick={() => setAiPanelRecord(null)}
                                             >
                                                 <X className="h-4 w-4 mr-1" />
@@ -1142,9 +1168,9 @@ export default function CostCodesPage() {
                                         </div>
                                     )}
 
-                                    {/* Already accepted: Change / Retry options */}
-                                    {acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && (
-                                        <div className="flex gap-2 mt-3">
+                                    {/* Already accepted: Change / Retry / Retry with Info */}
+                                    {acceptedCodes[aiPanelResult.uniquecode] && editingCode !== aiPanelResult.uniquecode && retryWithInfo !== aiPanelResult.uniquecode && (
+                                        <div className="flex flex-wrap gap-2 mt-3">
                                             <Button
                                                 size="sm"
                                                 variant="outline"
@@ -1172,6 +1198,17 @@ export default function CostCodesPage() {
                                             >
                                                 <RotateCcw className="h-4 w-4 mr-1" />
                                                 {t.retryAi}
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setRetryWithInfo(aiPanelResult.uniquecode);
+                                                    setRetryInfoText("");
+                                                }}
+                                            >
+                                                <RotateCcw className="h-4 w-4 mr-1" />
+                                                {t.retryWithInfo}
                                             </Button>
                                         </div>
                                     )}
@@ -1213,6 +1250,47 @@ export default function CostCodesPage() {
                                             >
                                                 {t.cancelEdit}
                                             </Button>
+                                        </div>
+                                    )}
+
+                                    {/* Retry with additional info */}
+                                    {retryWithInfo === aiPanelResult.uniquecode && (
+                                        <div className="mt-3 space-y-2">
+                                            <textarea
+                                                value={retryInfoText}
+                                                onChange={(e) => setRetryInfoText(e.target.value)}
+                                                placeholder={t.retryInfoPlaceholder}
+                                                className="w-full h-20 px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                                autoFocus
+                                            />
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    disabled={!retryInfoText.trim() || classifying !== null}
+                                                    onClick={() => {
+                                                        const info = retryInfoText.trim();
+                                                        setRetryWithInfo(null);
+                                                        setAcceptedCodes((prev) => {
+                                                            const next = { ...prev };
+                                                            delete next[aiPanelResult.uniquecode];
+                                                            return next;
+                                                        });
+                                                        setAiPanelRecord(null);
+                                                        if (aiPanelRecordData) classifyRecord(aiPanelRecordData, info);
+                                                    }}
+                                                    className="bg-violet-600 hover:bg-violet-700 text-white"
+                                                >
+                                                    <RotateCcw className="h-4 w-4 mr-1" />
+                                                    {t.sendRetry}
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => setRetryWithInfo(null)}
+                                                >
+                                                    {t.cancelEdit}
+                                                </Button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
