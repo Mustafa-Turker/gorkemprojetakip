@@ -75,6 +75,9 @@ interface AiClassifyResult {
     listUsed: "old" | "new";
     usage?: Record<string, number>;
     cost?: AiCost | null;
+    durationMs?: number;
+    fallbackUsed?: boolean;
+    fallbackReason?: string | null;
     error?: string;
 }
 
@@ -164,6 +167,9 @@ const translations = {
         saveCode: "Save",
         cancelEdit: "Cancel",
         totalApiCost: "Total API Cost",
+        duration: "Duration",
+        model: "Model",
+        fallbackUsed: "Fallback to deepseek-chat (reasoner failed)",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -248,6 +254,9 @@ const translations = {
         saveCode: "Kaydet",
         cancelEdit: "Iptal",
         totalApiCost: "Toplam API Maliyeti",
+        duration: "Sure",
+        model: "Model",
+        fallbackUsed: "deepseek-chat'e gecildi (reasoner basarisiz)",
     },
 } as const;
 
@@ -1096,13 +1105,26 @@ export default function CostCodesPage() {
                                 }`}>
                                     <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">{t.suggestedCode}</div>
                                     {aiPanelResult.suggestion ? (
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <span className="font-mono text-lg font-bold text-violet-700 dark:text-violet-300">
                                                 {acceptedCodes[aiPanelResult.uniquecode] || aiPanelResult.suggestion}
                                             </span>
                                             <Badge variant="outline" className="text-xs">
                                                 {t.listUsed}: {aiPanelResult.listUsed === "old" ? "GIDER GRUPLARI 2022" : "IQ COST CODES"}
                                             </Badge>
+                                            <Badge variant="outline" className="text-xs">
+                                                {t.model}: {aiPanelResult.request.model}
+                                            </Badge>
+                                            {aiPanelResult.durationMs != null && (
+                                                <Badge variant="outline" className="text-xs">
+                                                    {t.duration}: {(aiPanelResult.durationMs / 1000).toFixed(1)}s
+                                                </Badge>
+                                            )}
+                                            {aiPanelResult.fallbackUsed && (
+                                                <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                                    {t.fallbackUsed}
+                                                </Badge>
+                                            )}
                                             {acceptedCodes[aiPanelResult.uniquecode] && (
                                                 <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
                                                     <Check className="h-3 w-3 mr-1" />
@@ -1111,9 +1133,26 @@ export default function CostCodesPage() {
                                             )}
                                         </div>
                                     ) : (
-                                        <span className="text-rose-600 dark:text-rose-400 text-sm">
-                                            {aiPanelResult.error || t.noSuggestion}
-                                        </span>
+                                        <div className="space-y-2">
+                                            <span className="text-rose-600 dark:text-rose-400 text-sm">
+                                                {aiPanelResult.error || t.noSuggestion}
+                                            </span>
+                                            <div className="flex flex-wrap gap-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                    {t.model}: {aiPanelResult.request.model}
+                                                </Badge>
+                                                {aiPanelResult.durationMs != null && (
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {t.duration}: {(aiPanelResult.durationMs / 1000).toFixed(1)}s
+                                                    </Badge>
+                                                )}
+                                                {aiPanelResult.fallbackUsed && (
+                                                    <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                                        {t.fallbackUsed}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
                                     )}
 
                                     {/* Not yet accepted: Accept / Manual / Retry with Info / Dismiss */}

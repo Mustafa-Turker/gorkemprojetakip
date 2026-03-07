@@ -6,18 +6,20 @@ const OLD_LIST_ID = "b021ff2d-4637-43a7-9478-cf7a480703c6";
 const NEW_LIST_ID = "2b31da96-91de-43b3-a0b5-6cf0efa2948e";
 const DATE_CUTOFF = "2024-10-01";
 
-// DeepSeek Reasoner pricing (per 1M tokens)
-const PRICE_INPUT_CACHE_HIT = 0.028;
-const PRICE_INPUT_CACHE_MISS = 0.28;
-const PRICE_OUTPUT = 0.42;
+// DeepSeek pricing (per 1M tokens)
+const PRICING = {
+    "deepseek-reasoner": { cacheHit: 0.028, cacheMiss: 0.28, output: 0.42 },
+    "deepseek-chat": { cacheHit: 0.007, cacheMiss: 0.07, output: 0.28 },
+};
 
-function calcCost(usage) {
+function calcCost(usage, model) {
     if (!usage) return null;
+    const prices = PRICING[model] || PRICING["deepseek-reasoner"];
     const cacheHit = usage.prompt_cache_hit_tokens || 0;
     const cacheMiss = usage.prompt_cache_miss_tokens || 0;
     const output = usage.completion_tokens || 0;
-    const inputCost = (cacheHit / 1_000_000) * PRICE_INPUT_CACHE_HIT + (cacheMiss / 1_000_000) * PRICE_INPUT_CACHE_MISS;
-    const outputCost = (output / 1_000_000) * PRICE_OUTPUT;
+    const inputCost = (cacheHit / 1_000_000) * prices.cacheHit + (cacheMiss / 1_000_000) * prices.cacheMiss;
+    const outputCost = (output / 1_000_000) * prices.output;
     return {
         inputCacheHit: cacheHit,
         inputCacheMiss: cacheMiss,
@@ -28,7 +30,7 @@ function calcCost(usage) {
     };
 }
 
-// In-memory cache for cost code lists (per-request in Workers, but helps within a single batch)
+// In-memory cache for cost code lists
 let cachedOldList = null;
 let cachedNewList = null;
 
@@ -128,6 +130,44 @@ function buildUserMessage(record) {
     return parts.join("\n");
 }
 
+function parseSuggestion(content) {
+    if (!content) return null;
+    try {
+        const jsonMatch = content.match(/\{[^}]*"costCode"\s*:\s*"([^"]+)"[^}]*\}/);
+        if (jsonMatch) return jsonMatch[1];
+        const parsed = JSON.parse(content);
+        return parsed.costCode || null;
+    } catch {
+        const codeMatch = content.match(/\d{2}\.\d{2}\.\d{2}\.\d{2}/);
+        return codeMatch ? codeMatch[0] : null;
+    }
+}
+
+async function callDeepSeek(apiKey, model, systemMessage, userMessage) {
+    const body = {
+        model,
+        messages: [
+            { role: "system", content: systemMessage },
+            { role: "user", content: userMessage },
+        ],
+        response_format: { type: "json_object" },
+    };
+
+    const start = Date.now();
+    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+    });
+    const durationMs = Date.now() - start;
+    const data = await resp.json();
+
+    return { ok: resp.ok, status: resp.status, data, durationMs };
+}
+
 async function getEnv() {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const { env } = await getCloudflareContext();
@@ -150,13 +190,11 @@ export async function POST(request) {
 
         const token = await getAccessToken();
 
-        // Determine which list to use based on first record date (all records in a batch should be same period)
         const firstDate = records[0].date || "";
         const useOld = firstDate < DATE_CUTOFF;
         const listId = useOld ? OLD_LIST_ID : NEW_LIST_ID;
         const listName = useOld ? "GIDER GRUPLARI 2022" : "IQ COST CODES";
 
-        // Fetch and cache the cost code list
         let codes;
         if (useOld) {
             if (!cachedOldList) cachedOldList = formatOldList(await fetchListItems(listId, token));
@@ -169,79 +207,62 @@ export async function POST(request) {
         const costCodeTable = buildCostCodeTable(codes, useOld);
         const systemMessage = buildSystemMessage(costCodeTable);
 
-        // Process records one by one
         const results = [];
         for (const record of records) {
             const userMessage = buildUserMessage(record);
 
             try {
-                const deepseekBody = {
-                    model: "deepseek-reasoner",
-                    messages: [
-                        { role: "system", content: systemMessage },
-                        { role: "user", content: userMessage },
-                    ],
-                    response_format: { type: "json_object" },
-                };
+                // Try deepseek-reasoner first
+                let res = await callDeepSeek(apiKey, "deepseek-reasoner", systemMessage, userMessage);
+                let model = "deepseek-reasoner";
+                let fallbackUsed = false;
+                let fallbackReason = null;
 
-                const dsResp = await fetch("https://api.deepseek.com/chat/completions", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${apiKey}`,
-                    },
-                    body: JSON.stringify(deepseekBody),
-                });
+                // Fallback to deepseek-chat if reasoner fails
+                if (!res.ok) {
+                    fallbackReason = res.data?.error?.message || `API error ${res.status}`;
+                    const fallbackRes = await callDeepSeek(apiKey, "deepseek-chat", systemMessage, userMessage);
+                    if (fallbackRes.ok) {
+                        res = fallbackRes;
+                        model = "deepseek-chat";
+                        fallbackUsed = true;
+                    }
+                    // If fallback also fails, we'll use the original error below
+                }
 
-                const dsData = await dsResp.json();
-
-                if (!dsResp.ok) {
+                if (!res.ok) {
                     results.push({
                         uniquecode: record.uniquecode,
                         suggestion: null,
                         reasoning: null,
-                        request: { systemMessage, userMessage, model: "deepseek-reasoner" },
-                        response: dsData,
+                        request: { systemMessage, userMessage, model },
+                        response: res.data,
                         listUsed: useOld ? "old" : "new",
-                        error: dsData.error?.message || `API error ${dsResp.status}`,
+                        durationMs: res.durationMs,
+                        error: res.data?.error?.message || `API error ${res.status}`,
                     });
                     continue;
                 }
 
-                const choice = dsData.choices?.[0]?.message;
+                const choice = res.data.choices?.[0]?.message;
                 const reasoning = choice?.reasoning_content || null;
                 const content = choice?.content || "";
-
-                // Parse JSON from content
-                let suggestion = null;
-                try {
-                    const jsonMatch = content.match(/\{[^}]*"costCode"\s*:\s*"([^"]+)"[^}]*\}/);
-                    if (jsonMatch) {
-                        suggestion = jsonMatch[1];
-                    } else {
-                        // Try parsing full content as JSON
-                        const parsed = JSON.parse(content);
-                        suggestion = parsed.costCode || null;
-                    }
-                } catch {
-                    // If content itself looks like a code, use it
-                    const codeMatch = content.match(/\d{2}\.\d{2}\.\d{2}\.\d{2}/);
-                    if (codeMatch) suggestion = codeMatch[0];
-                }
-
-                // Calculate cost from usage (DeepSeek Reasoner pricing per 1M tokens)
-                const usage = dsData.usage || {};
-                const cost = calcCost(usage);
+                const suggestion = parseSuggestion(content);
+                const usage = res.data.usage || {};
+                const cost = calcCost(usage, model);
 
                 results.push({
                     uniquecode: record.uniquecode,
                     suggestion,
                     reasoning,
-                    request: { systemMessage, userMessage, model: "deepseek-reasoner" },
-                    response: dsData,
+                    request: { systemMessage, userMessage, model },
+                    response: res.data,
                     listUsed: useOld ? "old" : "new",
                     usage,
                     cost,
+                    durationMs: res.durationMs,
+                    fallbackUsed,
+                    fallbackReason,
                 });
             } catch (err) {
                 results.push({
