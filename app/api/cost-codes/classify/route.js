@@ -158,7 +158,7 @@ export async function POST(request) {
                         { role: "system", content: systemMessage },
                         { role: "user", content: userMessage },
                     ],
-                    max_tokens: 200,
+                    response_format: { type: "json_object" },
                 };
 
                 const dsResp = await fetch("https://api.deepseek.com/chat/completions", {
