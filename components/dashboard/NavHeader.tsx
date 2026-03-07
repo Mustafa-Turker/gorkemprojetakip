@@ -13,6 +13,7 @@ const NAV_ITEMS = [
     { href: "/study", label: "Study" },
     { href: "/issues", label: "Issues" },
     { href: "/upload", label: "Upload" },
+    { href: "/cost-codes", label: "Cost Codes" },
 ];
 
 export default function NavHeader() {

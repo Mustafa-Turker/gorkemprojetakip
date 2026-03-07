@@ -8,11 +8,16 @@ export async function GET(request) {
         const source = searchParams.get("source");
         const project = searchParams.get("project");
 
+        const includeMissingDocs = searchParams.get("includeMissingDocs") === "true";
+
         let sql = `
-            SELECT uniquecode, doc, date, projekodu, source, carifirma, aciklama, usd_degeri, partner, islemturu, cost, giris_tutar, cikis_tutar, parabirimi
+            SELECT uniquecode, doc, date, projekodu, source, carifirma, aciklama, usd_degeri, partner, islemturu, cost, giris_tutar, cikis_tutar, parabirimi, masrafmerkezi
             FROM public.view_muhasebe_konsolide
-            WHERE year = $1 AND doc IS NOT NULL AND doc != ''
+            WHERE year = $1
         `;
+        if (!includeMissingDocs) {
+            sql += ` AND doc IS NOT NULL AND doc != ''`;
+        }
         const params = [year];
 
         if (source) {
