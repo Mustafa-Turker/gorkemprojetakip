@@ -668,7 +668,7 @@ export default function CostCodesPage() {
                     {records && (
                         <Button
                             onClick={classifyingAll ? () => { abortRef.current = true; } : classifyAllMissing}
-                            disabled={classifying !== null && !classifyingAll}
+                            disabled={classifyingSet.size > 0 && !classifyingAll}
                             variant={classifyingAll ? "destructive" : "outline"}
                             className={`flex-1 sm:flex-none sm:min-w-[200px] h-10 ${!classifyingAll ? "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/30" : ""}`}
                         >
