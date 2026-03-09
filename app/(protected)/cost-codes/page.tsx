@@ -762,7 +762,7 @@ export default function CostCodesPage() {
                     {/* Sticky table filters */}
                     <div
                         ref={filterBarRef}
-                        className="sticky top-16 z-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-b-0 rounded-t-xl shadow-sm p-3 space-y-2 -mb-px"
+                        className="sticky top-16 z-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-b-0 rounded-t-xl shadow-sm p-3 space-y-2 -mb-px"
                     >
                         {/* Filter row 1: dropdowns */}
                         <div className="flex flex-wrap gap-2">
