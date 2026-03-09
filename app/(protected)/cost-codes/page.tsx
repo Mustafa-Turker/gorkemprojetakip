@@ -37,6 +37,8 @@ import {
     X,
     Pencil,
     RotateCcw,
+    Square,
+    Save,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -170,6 +172,19 @@ const translations = {
         duration: "Duration",
         model: "Model",
         fallbackUsed: "Fallback to deepseek-chat (reasoner failed)",
+        reviewAndSave: "Review & Save",
+        reviewTitle: "Review Classifications",
+        reviewDescription: "Review AI-suggested cost codes before saving",
+        reviewAccept: "Accept",
+        reviewDecline: "Decline",
+        reviewPrev: "Previous",
+        reviewNext: "Next",
+        reviewFinish: "Finish Review",
+        reviewAccepted: "Accepted",
+        reviewDeclined: "Declined",
+        reviewSaveAll: "Save Accepted",
+        reviewNoItems: "No items to review",
+        stopClassify: "Stop",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -257,6 +272,19 @@ const translations = {
         duration: "Sure",
         model: "Model",
         fallbackUsed: "deepseek-chat'e gecildi (reasoner basarisiz)",
+        reviewAndSave: "Incele ve Kaydet",
+        reviewTitle: "Siniflandirmalari Incele",
+        reviewDescription: "Kaydetmeden once AI onerilen masraf merkezlerini inceleyin",
+        reviewAccept: "Kabul Et",
+        reviewDecline: "Reddet",
+        reviewPrev: "Onceki",
+        reviewNext: "Sonraki",
+        reviewFinish: "Incelemeyi Bitir",
+        reviewAccepted: "Kabul Edilen",
+        reviewDeclined: "Reddedilen",
+        reviewSaveAll: "Kabul Edilenleri Kaydet",
+        reviewNoItems: "Incelenecek kayit yok",
+        stopClassify: "Durdur",
     },
 } as const;
 
@@ -313,6 +341,11 @@ export default function CostCodesPage() {
     const [retryInfoText, setRetryInfoText] = useState("");
     const abortRef = useRef(false);
 
+    // Review & Save state
+    const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+    const [reviewIndex, setReviewIndex] = useState(0);
+    const [reviewDecisions, setReviewDecisions] = useState<Record<string, "accepted" | "declined">>({});
+
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
 
@@ -330,7 +363,7 @@ export default function CostCodesPage() {
         setError(null);
         setTableSourceFilter([]);
         setTableProjectFilter([]);
-        setTablePartnerFilter([]);
+        setTablePartnerFilter(["GORKEM"]);
         setTransTypeFilter([]);
         setCostFilter([]);
         setSearchQuery("");
@@ -561,6 +594,33 @@ export default function CostCodesPage() {
         return filtered;
     }, [records, showMissingOnly, tableSourceFilter, tableProjectFilter, tablePartnerFilter, transTypeFilter, costFilter, dateFrom, dateTo, searchQuery]);
 
+    // Count of missing items to classify (for button label)
+    const missingToClassifyCount = useMemo(() => {
+        return filteredRecords.filter(
+            (r) =>
+                REQUIRES_COST_CODE.includes(r.islemturu) &&
+                (!r.masrafmerkezi || r.masrafmerkezi.trim() === "") &&
+                !aiResults[r.uniquecode] &&
+                !acceptedCodes[r.uniquecode]
+        ).length;
+    }, [filteredRecords, aiResults, acceptedCodes]);
+
+    // Items accepted but not yet saved (for Review & Save)
+    const reviewableItems = useMemo(() => {
+        return Object.entries(acceptedCodes)
+            .map(([uniquecode, code]) => {
+                const record = records?.find((r) => r.uniquecode === uniquecode);
+                const aiResult = aiResults[uniquecode];
+                return record ? { uniquecode, code, record, aiResult } : null;
+            })
+            .filter(Boolean) as Array<{
+                uniquecode: string;
+                code: string;
+                record: DocumentRecord;
+                aiResult?: AiClassifyResult;
+            }>;
+    }, [acceptedCodes, records, aiResults]);
+
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
     const pagedRecords = filteredRecords.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -668,23 +728,40 @@ export default function CostCodesPage() {
                     {records && (
                         <Button
                             onClick={classifyingAll ? () => { abortRef.current = true; } : classifyAllMissing}
-                            disabled={classifyingSet.size > 0 && !classifyingAll}
+                            disabled={(classifyingSet.size > 0 && !classifyingAll) || (!classifyingAll && missingToClassifyCount === 0)}
                             variant={classifyingAll ? "destructive" : "outline"}
                             className={`flex-1 sm:flex-none sm:min-w-[200px] h-10 ${!classifyingAll ? "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/30" : ""}`}
                         >
                             {classifyingAll ? (
                                 <>
                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    {t.batchProgress
-                                        .replace("{current}", String(batchProgress.current))
-                                        .replace("{total}", String(batchProgress.total))}
+                                    {batchProgress.current} / {batchProgress.total} {t.classifying}
+                                    <Square className="h-3.5 w-3.5 ml-2 fill-current" />
                                 </>
                             ) : (
                                 <>
                                     <Sparkles className="h-4 w-4 mr-2" />
-                                    {t.classifyAll}
+                                    {t.classifyAll} ({missingToClassifyCount})
                                 </>
                             )}
+                        </Button>
+                    )}
+
+                    {/* Review & Save button */}
+                    {records && reviewableItems.length > 0 && (
+                        <Button
+                            onClick={() => {
+                                setReviewIndex(0);
+                                const decisions: Record<string, "accepted" | "declined"> = {};
+                                reviewableItems.forEach((item) => { decisions[item.uniquecode] = "accepted"; });
+                                setReviewDecisions(decisions);
+                                setReviewDialogOpen(true);
+                            }}
+                            variant="outline"
+                            className="flex-1 sm:flex-none sm:min-w-[180px] h-10 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                        >
+                            <Save className="h-4 w-4 mr-2" />
+                            {t.reviewAndSave} ({reviewableItems.length})
                         </Button>
                     )}
                 </div>
@@ -1397,6 +1474,221 @@ export default function CostCodesPage() {
                                         {JSON.stringify(aiPanelResult.response, null, 2)}
                                     </pre>
                                 </CollapsibleSection>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Review & Save Dialog */}
+                <Dialog open={reviewDialogOpen} onOpenChange={(open) => { if (!open) setReviewDialogOpen(false); }}>
+                    <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Save className="h-5 w-5 text-emerald-600" />
+                                {t.reviewTitle}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {t.reviewDescription}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {reviewableItems.length === 0 ? (
+                            <div className="text-center py-8 text-zinc-400">{t.reviewNoItems}</div>
+                        ) : reviewIndex < reviewableItems.length ? (
+                            /* Stepper mode — one item at a time */
+                            <div className="space-y-4">
+                                {/* Progress */}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-zinc-500">
+                                        {reviewIndex + 1} / {reviewableItems.length}
+                                    </span>
+                                    <div className="flex-1 mx-4 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-emerald-500 rounded-full transition-all"
+                                            style={{ width: `${((reviewIndex + 1) / reviewableItems.length) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Current item */}
+                                {(() => {
+                                    const item = reviewableItems[reviewIndex];
+                                    if (!item) return null;
+                                    const decision = reviewDecisions[item.uniquecode];
+                                    return (
+                                        <div className={`rounded-lg border p-4 space-y-3 ${decision === "accepted" ? "border-emerald-300 dark:border-emerald-800" : decision === "declined" ? "border-rose-300 dark:border-rose-800" : "border-zinc-200 dark:border-zinc-800"}`}>
+                                            {/* Record info */}
+                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                                <div><span className="text-zinc-500">{t.code}:</span> <span className="font-mono">{item.uniquecode}</span></div>
+                                                <div><span className="text-zinc-500">{t.date}:</span> {formatDate(item.record.date)}</div>
+                                                <div><span className="text-zinc-500">{t.vendor}:</span> {item.record.carifirma}</div>
+                                                <div><span className="text-zinc-500">{t.transType}:</span> {item.record.islemturu}</div>
+                                                <div className="col-span-2"><span className="text-zinc-500">{t.description}:</span> {item.record.aciklama}</div>
+                                            </div>
+
+                                            {/* Suggested code */}
+                                            <div className="flex items-center gap-2 p-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800">
+                                                <Sparkles className="h-4 w-4 text-violet-500" />
+                                                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">{item.code}</span>
+                                            </div>
+
+                                            {/* AI reasoning snippet */}
+                                            {item.aiResult?.reasoning && (
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400 max-h-[100px] overflow-y-auto p-2 bg-zinc-50 dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800">
+                                                    <span className="font-semibold">{t.reasoning}:</span> {item.aiResult.reasoning.slice(0, 300)}{item.aiResult.reasoning.length > 300 ? "..." : ""}
+                                                </div>
+                                            )}
+
+                                            {/* Accept / Decline */}
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    onClick={() => setReviewDecisions((prev) => ({ ...prev, [item.uniquecode]: "accepted" }))}
+                                                    variant={decision === "accepted" ? "default" : "outline"}
+                                                    className={decision === "accepted" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
+                                                    size="sm"
+                                                >
+                                                    <Check className="h-4 w-4 mr-1" />
+                                                    {t.reviewAccept}
+                                                </Button>
+                                                <Button
+                                                    onClick={() => setReviewDecisions((prev) => ({ ...prev, [item.uniquecode]: "declined" }))}
+                                                    variant={decision === "declined" ? "default" : "outline"}
+                                                    className={decision === "declined" ? "bg-rose-600 hover:bg-rose-700 text-white" : ""}
+                                                    size="sm"
+                                                >
+                                                    <X className="h-4 w-4 mr-1" />
+                                                    {t.reviewDecline}
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Navigation */}
+                                <div className="flex justify-between pt-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setReviewIndex((i) => Math.max(0, i - 1))}
+                                        disabled={reviewIndex === 0}
+                                    >
+                                        <ChevronLeft className="h-4 w-4 mr-1" />
+                                        {t.reviewPrev}
+                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setReviewIndex(reviewableItems.length)}
+                                        >
+                                            {t.reviewFinish}
+                                        </Button>
+                                        {reviewIndex < reviewableItems.length - 1 ? (
+                                            <Button size="sm" onClick={() => setReviewIndex((i) => i + 1)}>
+                                                {t.reviewNext}
+                                                <ChevronRight className="h-4 w-4 ml-1" />
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                size="sm"
+                                                onClick={() => setReviewIndex(reviewableItems.length)}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                            >
+                                                {t.reviewFinish}
+                                                <ChevronRight className="h-4 w-4 ml-1" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Summary mode */
+                            <div className="space-y-4">
+                                {(() => {
+                                    const accepted = reviewableItems.filter((item) => reviewDecisions[item.uniquecode] === "accepted");
+                                    const declined = reviewableItems.filter((item) => reviewDecisions[item.uniquecode] === "declined");
+                                    return (
+                                        <>
+                                            {/* Summary cards */}
+                                            <div className="flex gap-4">
+                                                <div className="flex-1 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-3 text-center">
+                                                    <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{accepted.length}</div>
+                                                    <div className="text-xs text-emerald-600 dark:text-emerald-400">{t.reviewAccepted}</div>
+                                                </div>
+                                                <div className="flex-1 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/20 p-3 text-center">
+                                                    <div className="text-2xl font-bold text-rose-700 dark:text-rose-300">{declined.length}</div>
+                                                    <div className="text-xs text-rose-600 dark:text-rose-400">{t.reviewDeclined}</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Accepted list */}
+                                            {accepted.length > 0 && (
+                                                <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                                                    <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                                                        {t.reviewAccepted} ({accepted.length})
+                                                    </div>
+                                                    <div className="max-h-[200px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                        {accepted.map((item) => (
+                                                            <div key={item.uniquecode} className="px-3 py-2 flex items-center justify-between text-sm">
+                                                                <span className="font-mono text-xs">{item.uniquecode}</span>
+                                                                <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Declined list */}
+                                            {declined.length > 0 && (
+                                                <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                                                    <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                                                        {t.reviewDeclined} ({declined.length})
+                                                    </div>
+                                                    <div className="max-h-[150px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                        {declined.map((item) => (
+                                                            <div key={item.uniquecode} className="px-3 py-2 flex items-center justify-between text-sm">
+                                                                <span className="font-mono text-xs">{item.uniquecode}</span>
+                                                                <span className="font-mono text-xs line-through text-zinc-400">{item.code}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Actions */}
+                                            <div className="flex justify-between pt-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setReviewIndex(0)}
+                                                >
+                                                    <ChevronLeft className="h-4 w-4 mr-1" />
+                                                    {t.reviewPrev}
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    disabled={accepted.length === 0}
+                                                    onClick={() => {
+                                                        // Remove declined items from acceptedCodes
+                                                        const declinedKeys = declined.map((d) => d.uniquecode);
+                                                        setAcceptedCodes((prev) => {
+                                                            const next = { ...prev };
+                                                            declinedKeys.forEach((k) => delete next[k]);
+                                                            return next;
+                                                        });
+                                                        // TODO: Actually save accepted items to Excel
+                                                        console.log("TODO: Save accepted items to Excel", accepted);
+                                                        setReviewDialogOpen(false);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                >
+                                                    <Save className="h-4 w-4 mr-1" />
+                                                    {t.reviewSaveAll} ({accepted.length})
+                                                </Button>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         )}
                     </DialogContent>
