@@ -186,6 +186,11 @@ const translations = {
         reviewSaveAll: "Save Accepted",
         reviewNoItems: "No items to review",
         stopClassify: "Stop",
+        savingToExcel: "Saving to Excel...",
+        saveComplete: "Save complete",
+        saveFailed: "Failed",
+        retryFailed: "Retry Failed",
+        savingProgress: "Saving",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -287,6 +292,11 @@ const translations = {
         reviewSaveAll: "Kabul Edilenleri Kaydet",
         reviewNoItems: "Incelenecek kayit yok",
         stopClassify: "Durdur",
+        savingToExcel: "Excel'e kaydediliyor...",
+        saveComplete: "Kaydetme tamamlandi",
+        saveFailed: "Basarisiz",
+        retryFailed: "Basarisizlari Tekrarla",
+        savingProgress: "Kaydediliyor",
     },
 } as const;
 
@@ -347,6 +357,9 @@ export default function CostCodesPage() {
     const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
     const [reviewIndex, setReviewIndex] = useState(0);
     const [reviewDecisions, setReviewDecisions] = useState<Record<string, "accepted" | "declined">>({});
+    const [saveProgress, setSaveProgress] = useState<Record<string, "pending" | "saving" | "saved" | "error">>({});
+    const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+    const [isSaving, setIsSaving] = useState(false);
 
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
@@ -1486,7 +1499,7 @@ export default function CostCodesPage() {
                 </Dialog>
 
                 {/* Review & Save Dialog */}
-                <Dialog open={reviewDialogOpen} onOpenChange={(open) => { if (!open) setReviewDialogOpen(false); }}>
+                <Dialog open={reviewDialogOpen} onOpenChange={(open) => { if (!open && !isSaving) { setReviewDialogOpen(false); setSaveProgress({}); setSaveErrors({}); } }}>
                     <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1655,12 +1668,24 @@ export default function CostCodesPage() {
                                                         {t.reviewAccepted} ({accepted.length})
                                                     </div>
                                                     <div className="max-h-[200px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
-                                                        {accepted.map((item) => (
-                                                            <div key={item.uniquecode} className="px-3 py-2 flex items-center justify-between text-sm">
-                                                                <span className="font-mono text-xs">{item.uniquecode}</span>
-                                                                <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
-                                                            </div>
-                                                        ))}
+                                                        {accepted.map((item) => {
+                                                            const status = saveProgress[item.uniquecode];
+                                                            return (
+                                                                <div key={item.uniquecode} className="px-3 py-2 flex items-center justify-between text-sm gap-2">
+                                                                    <span className="font-mono text-xs truncate">{item.uniquecode}</span>
+                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                        <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
+                                                                        {status === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />}
+                                                                        {status === "saved" && <Check className="h-3.5 w-3.5 text-emerald-500" />}
+                                                                        {status === "error" && (
+                                                                            <span className="text-xs text-rose-500" title={saveErrors[item.uniquecode]}>
+                                                                                <X className="h-3.5 w-3.5 inline" /> {t.saveFailed}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             )}
@@ -1688,30 +1713,122 @@ export default function CostCodesPage() {
                                                     variant="outline"
                                                     size="sm"
                                                     onClick={() => setReviewIndex(0)}
+                                                    disabled={isSaving}
                                                 >
                                                     <ChevronLeft className="h-4 w-4 mr-1" />
                                                     {t.reviewPrev}
                                                 </Button>
-                                                <Button
-                                                    size="sm"
-                                                    disabled={accepted.length === 0}
-                                                    onClick={() => {
-                                                        // Write accepted into acceptedCodes, remove declined
-                                                        setAcceptedCodes((prev) => {
-                                                            const next = { ...prev };
-                                                            accepted.forEach((a) => { next[a.uniquecode] = a.code; });
-                                                            declined.forEach((d) => { delete next[d.uniquecode]; });
-                                                            return next;
-                                                        });
-                                                        // TODO: Actually save accepted items to Excel
-                                                        console.log("TODO: Save accepted items to Excel", accepted);
-                                                        setReviewDialogOpen(false);
-                                                    }}
-                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                >
-                                                    <Save className="h-4 w-4 mr-1" />
-                                                    {t.reviewSaveAll} ({accepted.length})
-                                                </Button>
+                                                <div className="flex gap-2">
+                                                    {/* Retry failed button */}
+                                                    {!isSaving && Object.values(saveProgress).some((s) => s === "error") && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="border-rose-300 text-rose-700 dark:border-rose-700 dark:text-rose-300"
+                                                            onClick={async () => {
+                                                                const failed = accepted.filter((item) => saveProgress[item.uniquecode] === "error");
+                                                                if (failed.length === 0) return;
+                                                                setIsSaving(true);
+                                                                for (const item of failed) {
+                                                                    setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saving" }));
+                                                                    try {
+                                                                        const resp = await fetch("/api/cost-codes/save", {
+                                                                            method: "POST",
+                                                                            headers: { "Content-Type": "application/json" },
+                                                                            body: JSON.stringify({
+                                                                                date: item.record.date,
+                                                                                source: item.record.source,
+                                                                                aciklama: item.record.aciklama,
+                                                                                costCode: item.code,
+                                                                                uniquecode: item.uniquecode,
+                                                                            }),
+                                                                        });
+                                                                        const data = await resp.json();
+                                                                        if (data.success) {
+                                                                            setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
+                                                                            setSaveErrors((prev) => { const n = { ...prev }; delete n[item.uniquecode]; return n; });
+                                                                        } else {
+                                                                            setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                            setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: data.error || "Unknown error" }));
+                                                                        }
+                                                                    } catch (err: unknown) {
+                                                                        setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                        setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: (err as Error).message }));
+                                                                    }
+                                                                }
+                                                                setIsSaving(false);
+                                                            }}
+                                                        >
+                                                            <RotateCcw className="h-4 w-4 mr-1" />
+                                                            {t.retryFailed}
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        size="sm"
+                                                        disabled={accepted.length === 0 || isSaving}
+                                                        onClick={async () => {
+                                                            // Write accepted into acceptedCodes, remove declined
+                                                            setAcceptedCodes((prev) => {
+                                                                const next = { ...prev };
+                                                                accepted.forEach((a) => { next[a.uniquecode] = a.code; });
+                                                                declined.forEach((d) => { delete next[d.uniquecode]; });
+                                                                return next;
+                                                            });
+
+                                                            // Initialize save progress
+                                                            const progress: Record<string, "pending" | "saving" | "saved" | "error"> = {};
+                                                            accepted.forEach((a) => { progress[a.uniquecode] = "pending"; });
+                                                            setSaveProgress(progress);
+                                                            setSaveErrors({});
+                                                            setIsSaving(true);
+
+                                                            // Save one-by-one
+                                                            let savedCount = 0;
+                                                            for (const item of accepted) {
+                                                                setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saving" }));
+                                                                try {
+                                                                    const resp = await fetch("/api/cost-codes/save", {
+                                                                        method: "POST",
+                                                                        headers: { "Content-Type": "application/json" },
+                                                                        body: JSON.stringify({
+                                                                            date: item.record.date,
+                                                                            source: item.record.source,
+                                                                            aciklama: item.record.aciklama,
+                                                                            costCode: item.code,
+                                                                            uniquecode: item.uniquecode,
+                                                                        }),
+                                                                    });
+                                                                    const data = await resp.json();
+                                                                    if (data.success) {
+                                                                        setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
+                                                                        savedCount++;
+                                                                    } else {
+                                                                        setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                        setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: data.error || "Unknown error" }));
+                                                                    }
+                                                                } catch (err: unknown) {
+                                                                    setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                    setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: (err as Error).message }));
+                                                                }
+                                                            }
+
+                                                            setIsSaving(false);
+                                                        }}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                    >
+                                                        {isSaving ? (
+                                                            <>
+                                                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                                                {t.savingProgress} {Object.values(saveProgress).filter((s) => s === "saved" || s === "error").length}/{accepted.length}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Save className="h-4 w-4 mr-1" />
+                                                                {t.reviewSaveAll} ({accepted.length})
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </>
                                     );
