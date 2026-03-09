@@ -182,6 +182,7 @@ const translations = {
         reviewFinish: "Finish Review",
         reviewAccepted: "Accepted",
         reviewDeclined: "Declined",
+        reviewUndecided: "Undecided",
         reviewSaveAll: "Save Accepted",
         reviewNoItems: "No items to review",
         stopClassify: "Stop",
@@ -282,6 +283,7 @@ const translations = {
         reviewFinish: "Incelemeyi Bitir",
         reviewAccepted: "Kabul Edilen",
         reviewDeclined: "Reddedilen",
+        reviewUndecided: "Kararsiz",
         reviewSaveAll: "Kabul Edilenleri Kaydet",
         reviewNoItems: "Incelenecek kayit yok",
         stopClassify: "Durdur",
@@ -605,21 +607,23 @@ export default function CostCodesPage() {
         ).length;
     }, [filteredRecords, aiResults, acceptedCodes]);
 
-    // Items accepted but not yet saved (for Review & Save)
+    // Items with AI results (for Review & Save) — source of truth is aiResults, not acceptedCodes
     const reviewableItems = useMemo(() => {
-        return Object.entries(acceptedCodes)
-            .map(([uniquecode, code]) => {
+        return Object.entries(aiResults)
+            .filter(([, result]) => result.suggestion && !result.error)
+            .map(([uniquecode, aiResult]) => {
                 const record = records?.find((r) => r.uniquecode === uniquecode);
-                const aiResult = aiResults[uniquecode];
-                return record ? { uniquecode, code, record, aiResult } : null;
+                const accepted = acceptedCodes[uniquecode];
+                return record ? { uniquecode, code: accepted || aiResult.suggestion!, record, aiResult, isAccepted: !!accepted } : null;
             })
             .filter(Boolean) as Array<{
                 uniquecode: string;
                 code: string;
                 record: DocumentRecord;
-                aiResult?: AiClassifyResult;
+                aiResult: AiClassifyResult;
+                isAccepted: boolean;
             }>;
-    }, [acceptedCodes, records, aiResults]);
+    }, [aiResults, records, acceptedCodes]);
 
     // Pagination
     const totalPages = Math.ceil(filteredRecords.length / PAGE_SIZE);
@@ -753,7 +757,9 @@ export default function CostCodesPage() {
                             onClick={() => {
                                 setReviewIndex(0);
                                 const decisions: Record<string, "accepted" | "declined"> = {};
-                                reviewableItems.forEach((item) => { decisions[item.uniquecode] = "accepted"; });
+                                reviewableItems.forEach((item) => {
+                                    if (item.isAccepted) decisions[item.uniquecode] = "accepted";
+                                });
                                 setReviewDecisions(decisions);
                                 setReviewDialogOpen(true);
                             }}
@@ -1542,7 +1548,14 @@ export default function CostCodesPage() {
                                             {/* Accept / Decline */}
                                             <div className="flex gap-2">
                                                 <Button
-                                                    onClick={() => setReviewDecisions((prev) => ({ ...prev, [item.uniquecode]: "accepted" }))}
+                                                    onClick={() => setReviewDecisions((prev) => {
+                                                        if (prev[item.uniquecode] === "accepted") {
+                                                            const next = { ...prev };
+                                                            delete next[item.uniquecode];
+                                                            return next;
+                                                        }
+                                                        return { ...prev, [item.uniquecode]: "accepted" };
+                                                    })}
                                                     variant={decision === "accepted" ? "default" : "outline"}
                                                     className={decision === "accepted" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
                                                     size="sm"
@@ -1551,7 +1564,14 @@ export default function CostCodesPage() {
                                                     {t.reviewAccept}
                                                 </Button>
                                                 <Button
-                                                    onClick={() => setReviewDecisions((prev) => ({ ...prev, [item.uniquecode]: "declined" }))}
+                                                    onClick={() => setReviewDecisions((prev) => {
+                                                        if (prev[item.uniquecode] === "declined") {
+                                                            const next = { ...prev };
+                                                            delete next[item.uniquecode];
+                                                            return next;
+                                                        }
+                                                        return { ...prev, [item.uniquecode]: "declined" };
+                                                    })}
                                                     variant={decision === "declined" ? "default" : "outline"}
                                                     className={decision === "declined" ? "bg-rose-600 hover:bg-rose-700 text-white" : ""}
                                                     size="sm"
@@ -1607,6 +1627,7 @@ export default function CostCodesPage() {
                                 {(() => {
                                     const accepted = reviewableItems.filter((item) => reviewDecisions[item.uniquecode] === "accepted");
                                     const declined = reviewableItems.filter((item) => reviewDecisions[item.uniquecode] === "declined");
+                                    const undecided = reviewableItems.filter((item) => !reviewDecisions[item.uniquecode]);
                                     return (
                                         <>
                                             {/* Summary cards */}
@@ -1619,6 +1640,12 @@ export default function CostCodesPage() {
                                                     <div className="text-2xl font-bold text-rose-700 dark:text-rose-300">{declined.length}</div>
                                                     <div className="text-xs text-rose-600 dark:text-rose-400">{t.reviewDeclined}</div>
                                                 </div>
+                                                {undecided.length > 0 && (
+                                                    <div className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 p-3 text-center">
+                                                        <div className="text-2xl font-bold text-zinc-500 dark:text-zinc-400">{undecided.length}</div>
+                                                        <div className="text-xs text-zinc-400 dark:text-zinc-500">{t.reviewUndecided}</div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Accepted list */}
@@ -1669,11 +1696,11 @@ export default function CostCodesPage() {
                                                     size="sm"
                                                     disabled={accepted.length === 0}
                                                     onClick={() => {
-                                                        // Remove declined items from acceptedCodes
-                                                        const declinedKeys = declined.map((d) => d.uniquecode);
+                                                        // Write accepted into acceptedCodes, remove declined
                                                         setAcceptedCodes((prev) => {
                                                             const next = { ...prev };
-                                                            declinedKeys.forEach((k) => delete next[k]);
+                                                            accepted.forEach((a) => { next[a.uniquecode] = a.code; });
+                                                            declined.forEach((d) => { delete next[d.uniquecode]; });
                                                             return next;
                                                         });
                                                         // TODO: Actually save accepted items to Excel
