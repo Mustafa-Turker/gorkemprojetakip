@@ -116,17 +116,18 @@ export async function POST(request) {
         const sessionId = sessionResp.data.id;
 
         try {
-            // Step 3: Unprotect sheet (try no password, then Gorkem.2020)
+            // Step 3: Unprotect sheet (try no password, then Gorkem.2020, or skip if not protected)
             const unprotectResp = await graphFetch(
                 `${wbBase}/worksheets/${SHEET_NAME}/protection/unprotect`,
                 token, sessionId, { method: "POST", body: JSON.stringify({}) }
             );
-            if (!unprotectResp.ok) {
+            if (!unprotectResp.ok && unprotectResp.status !== 400) {
+                // 400 = sheet not protected or invalid arg — safe to skip
                 const unprotectRetry = await graphFetch(
                     `${wbBase}/worksheets/${SHEET_NAME}/protection/unprotect`,
                     token, sessionId, { method: "POST", body: JSON.stringify({ password: "Gorkem.2020" }) }
                 );
-                if (!unprotectRetry.ok) {
+                if (!unprotectRetry.ok && unprotectRetry.status !== 400) {
                     const errMsg = unprotectRetry.data?.error?.message || JSON.stringify(unprotectRetry.data);
                     throw new Error(`Cannot unprotect sheet "${SHEET_NAME}" (status ${unprotectRetry.status}): ${errMsg}`);
                 }
