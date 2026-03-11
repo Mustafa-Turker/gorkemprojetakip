@@ -150,9 +150,8 @@ export async function POST(request) {
                 throw new Error(`Cannot extract order number from uniquecode: "${uniquecode}"`);
             }
 
-            // Find matching row by order number (column 0) AND description (column 6)
+            // Find matching row by order number (column 0) — unique per daily Excel file
             const rows = rowsResp.data.value || [];
-            const normalizedAciklama = aciklama.trim().toLowerCase();
             let matchedRowIndex = -1;
 
             for (let i = 0; i < rows.length; i++) {
@@ -160,29 +159,14 @@ export async function POST(request) {
                 const excelOrder = typeof rowValues[ORDER_COL_INDEX] === "number"
                     ? rowValues[ORDER_COL_INDEX]
                     : parseInt(String(rowValues[ORDER_COL_INDEX] || ""), 10);
-                const excelDesc = String(rowValues[DESC_COL_INDEX] || "").trim().toLowerCase();
-                if (excelOrder === orderNumber && excelDesc === normalizedAciklama) {
+                if (excelOrder === orderNumber) {
                     matchedRowIndex = i;
                     break;
                 }
             }
 
             if (matchedRowIndex === -1) {
-                // Diagnostic: find desc-only matches and show their column 0 values
-                const descMatches = [];
-                for (let i = 0; i < rows.length; i++) {
-                    const rowValues = rows[i].values?.[0] || [];
-                    const excelDesc = String(rowValues[DESC_COL_INDEX] || "").trim().toLowerCase();
-                    if (excelDesc === normalizedAciklama) {
-                        descMatches.push({ row: i, col0: rowValues[ORDER_COL_INDEX], col0type: typeof rowValues[ORDER_COL_INDEX] });
-                    }
-                }
-                // Also sample first 3 rows' column 0
-                const sample = rows.slice(0, 3).map((r, i) => {
-                    const v = r.values?.[0]?.[ORDER_COL_INDEX];
-                    return `row${i}:col0=${JSON.stringify(v)}(${typeof v})`;
-                });
-                throw new Error(`Row not found: order=${orderNumber}, searched ${rows.length} rows. Desc matches: ${JSON.stringify(descMatches)}. Sample col0: [${sample.join(", ")}]. Looking for: "${aciklama.trim().substring(0, 80)}"`);
+                throw new Error(`Row not found: no row with order=${orderNumber} in Excel file (searched ${rows.length} rows)`);
             }
 
             // Step 5: Get data body range to compute cell address
