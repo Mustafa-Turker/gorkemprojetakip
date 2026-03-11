@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 const DATE_CUTOFF = "2024-10-01";
 const SHEET_NAME = "KASAHAREKETLERI";
 const TABLE_NAME = "Table_KasaHareketleri";
+const ORDER_COL_INDEX = 0; // 1st column (0-based) — Order / Sıra
 const DESC_COL_INDEX = 6; // 7th column (0-based) — LongDescription / Açıklama
 const COST_CODE_COL_INDEX = 4; // 5th column (0-based) — CostCode / Malz./Hiz. Kodu
 
@@ -142,22 +143,32 @@ export async function POST(request) {
                 throw new Error(`Failed to get table rows: ${rowsResp.data?.error?.message || rowsResp.status}`);
             }
 
-            // Find matching row by description (column index 6)
+            // Extract order number from uniquecode (e.g. "BAG.ADM.251127.043" → 43)
+            const uniquecodeParts = uniquecode.split(".");
+            const orderNumber = parseInt(uniquecodeParts[uniquecodeParts.length - 1], 10);
+            if (isNaN(orderNumber)) {
+                throw new Error(`Cannot extract order number from uniquecode: "${uniquecode}"`);
+            }
+
+            // Find matching row by order number (column 0) AND description (column 6)
             const rows = rowsResp.data.value || [];
             const normalizedAciklama = aciklama.trim().toLowerCase();
             let matchedRowIndex = -1;
 
             for (let i = 0; i < rows.length; i++) {
                 const rowValues = rows[i].values?.[0] || [];
+                const excelOrder = typeof rowValues[ORDER_COL_INDEX] === "number"
+                    ? rowValues[ORDER_COL_INDEX]
+                    : parseInt(String(rowValues[ORDER_COL_INDEX] || ""), 10);
                 const excelDesc = String(rowValues[DESC_COL_INDEX] || "").trim().toLowerCase();
-                if (excelDesc === normalizedAciklama) {
+                if (excelOrder === orderNumber && excelDesc === normalizedAciklama) {
                     matchedRowIndex = i;
                     break;
                 }
             }
 
             if (matchedRowIndex === -1) {
-                throw new Error(`Row not found: no matching description in Excel file (searched ${rows.length} rows). Looking for: "${aciklama.trim().substring(0, 80)}"`);
+                throw new Error(`Row not found: no matching row with order=${orderNumber} and description in Excel file (searched ${rows.length} rows). Looking for: "${aciklama.trim().substring(0, 80)}"`);
             }
 
             // Step 5: Get data body range to compute cell address
