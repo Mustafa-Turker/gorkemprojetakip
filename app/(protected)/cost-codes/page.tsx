@@ -68,9 +68,29 @@ interface AiCost {
     totalCost: number;
 }
 
+interface CodeDescription {
+    mainGroup: string;
+    subGroup?: string;
+    childGroup?: string;
+    costGroup?: string;
+    title: string;
+}
+
+interface CostCodeEntry {
+    kisaKod: string;
+    title: string;
+    mainGroup: string;
+    subGroup?: string;
+    childGroup?: string;
+    costGroup?: string;
+    enTitle?: string;
+    enMainGroup?: string;
+}
+
 interface AiClassifyResult {
     uniquecode: string;
     suggestion: string | null;
+    codeDescription?: CodeDescription | null;
     reasoning: string | null;
     request: { systemMessage: string; userMessage: string; model: string };
     response: unknown;
@@ -369,8 +389,36 @@ export default function CostCodesPage() {
     const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [savedItems, setSavedItems] = useState<Record<string, { code: string; cellAddress?: string; filePath?: string }>>({}); // uniquecode → save details
+    const [costCodesMap, setCostCodesMap] = useState<Map<string, CodeDescription>>(new Map()); // kisaKod → description
+    const [costCodesIsOld, setCostCodesIsOld] = useState(false);
 
     // Sticky filter bar ref
+    // Helper: store cost codes from API response (called once, from first classify call)
+    const storeCostCodes = useCallback((data: { costCodeList?: { codes?: CostCodeEntry[]; isOld?: boolean } }) => {
+        if (costCodesMap.size > 0 || !data.costCodeList?.codes) return;
+        const isOld = !!data.costCodeList.isOld;
+        const map = new Map<string, CodeDescription>();
+        for (const c of data.costCodeList.codes) {
+            if (isOld) {
+                map.set(c.kisaKod, { mainGroup: c.enMainGroup || "", costGroup: c.costGroup || "", title: c.enTitle || "" });
+            } else {
+                map.set(c.kisaKod, { mainGroup: c.mainGroup || "", subGroup: c.subGroup || "", childGroup: c.childGroup || "", title: c.title || "" });
+            }
+        }
+        setCostCodesMap(map);
+        setCostCodesIsOld(isOld);
+    }, [costCodesMap.size]);
+
+    // Helper: format a code description as "Level1 → Level2 → ..."
+    const formatCodeDescription = useCallback((code: string): string | null => {
+        const desc = costCodesMap.get(code);
+        if (!desc) return null;
+        if (costCodesIsOld) {
+            return [desc.mainGroup, desc.costGroup, desc.title].filter(Boolean).join(" → ");
+        }
+        return [desc.mainGroup, desc.subGroup, desc.childGroup, desc.title].filter(Boolean).join(" → ");
+    }, [costCodesMap, costCodesIsOld]);
+
     const filterBarRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -398,6 +446,8 @@ export default function CostCodesPage() {
         setAiResults({});
         setAcceptedCodes({});
         setSavedItems({});
+        setCostCodesMap(new Map());
+        setCostCodesIsOld(false);
 
         try {
             let url = `/api/documents?year=${year}&includeMissingDocs=true`;
@@ -435,6 +485,7 @@ export default function CostCodesPage() {
                 body: JSON.stringify({ records: [payload] }),
             });
             const data = await resp.json();
+            storeCostCodes(data);
             const clientDurationMs = Date.now() - startTime;
             if (data.results?.[0]) {
                 setAiResults((prev) => ({
@@ -459,7 +510,7 @@ export default function CostCodesPage() {
         } finally {
             setClassifyingSet((prev) => { const next = new Set(prev); next.delete(record.uniquecode); return next; });
         }
-    }, []);
+    }, [storeCostCodes]);
 
     // Batch classify all visible missing records
     const classifyAllMissing = useCallback(async () => {
@@ -501,6 +552,7 @@ export default function CostCodesPage() {
                     }),
                 });
                 const data = await resp.json();
+                storeCostCodes(data);
                 const clientDurationMs = Date.now() - startTime;
                 if (data.results?.[0]) {
                     setAiResults((prev) => ({
@@ -1228,32 +1280,41 @@ export default function CostCodesPage() {
                                 }`}>
                                     <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">{t.suggestedCode}</div>
                                     {aiPanelResult.suggestion ? (
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="font-mono text-lg font-bold text-violet-700 dark:text-violet-300">
-                                                {acceptedCodes[aiPanelResult.uniquecode] || aiPanelResult.suggestion}
-                                            </span>
-                                            <Badge variant="outline" className="text-xs">
-                                                {t.listUsed}: {aiPanelResult.listUsed === "old" ? "GIDER GRUPLARI 2022" : "IQ COST CODES"}
-                                            </Badge>
-                                            <Badge variant="outline" className="text-xs">
-                                                {t.model}: {aiPanelResult.request.model}
-                                            </Badge>
-                                            {aiPanelResult.durationMs != null && (
+                                        <div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="font-mono text-lg font-bold text-violet-700 dark:text-violet-300">
+                                                    {acceptedCodes[aiPanelResult.uniquecode] || aiPanelResult.suggestion}
+                                                </span>
                                                 <Badge variant="outline" className="text-xs">
-                                                    {t.duration}: {(aiPanelResult.durationMs / 1000).toFixed(1)}s
+                                                    {t.listUsed}: {aiPanelResult.listUsed === "old" ? "GIDER GRUPLARI 2022" : "IQ COST CODES"}
                                                 </Badge>
-                                            )}
-                                            {aiPanelResult.fallbackUsed && (
-                                                <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
-                                                    {t.fallbackUsed}
+                                                <Badge variant="outline" className="text-xs">
+                                                    {t.model}: {aiPanelResult.request.model}
                                                 </Badge>
-                                            )}
-                                            {acceptedCodes[aiPanelResult.uniquecode] && (
-                                                <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
-                                                    <Check className="h-3 w-3 mr-1" />
-                                                    Accepted
-                                                </Badge>
-                                            )}
+                                                {aiPanelResult.durationMs != null && (
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {t.duration}: {(aiPanelResult.durationMs / 1000).toFixed(1)}s
+                                                    </Badge>
+                                                )}
+                                                {aiPanelResult.fallbackUsed && (
+                                                    <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                                        {t.fallbackUsed}
+                                                    </Badge>
+                                                )}
+                                                {acceptedCodes[aiPanelResult.uniquecode] && (
+                                                    <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700">
+                                                        <Check className="h-3 w-3 mr-1" />
+                                                        Accepted
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            {(() => {
+                                                const displayCode = acceptedCodes[aiPanelResult.uniquecode] || aiPanelResult.suggestion;
+                                                const desc = displayCode ? formatCodeDescription(displayCode) : null;
+                                                return desc ? (
+                                                    <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{desc}</div>
+                                                ) : null;
+                                            })()}
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
@@ -1557,9 +1618,17 @@ export default function CostCodesPage() {
                                             </div>
 
                                             {/* Suggested code */}
-                                            <div className="flex items-center gap-2 p-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800">
-                                                <Sparkles className="h-4 w-4 text-violet-500" />
-                                                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">{item.code}</span>
+                                            <div className="p-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800">
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="h-4 w-4 text-violet-500" />
+                                                    <span className="font-mono font-bold text-violet-700 dark:text-violet-300">{item.code}</span>
+                                                </div>
+                                                {(() => {
+                                                    const desc = formatCodeDescription(item.code);
+                                                    return desc ? (
+                                                        <div className="mt-1 ml-6 text-xs text-zinc-500 dark:text-zinc-400">{desc}</div>
+                                                    ) : null;
+                                                })()}
                                             </div>
 
                                             {/* AI reasoning snippet */}
@@ -1695,7 +1764,15 @@ export default function CostCodesPage() {
                                                                     <div className="flex items-center justify-between gap-2">
                                                                         <span className="font-mono text-xs truncate">{item.uniquecode}</span>
                                                                         <div className="flex items-center gap-2 shrink-0">
-                                                                            <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
+                                                                            <div className="text-right">
+                                                                                <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
+                                                                                {(() => {
+                                                                                    const desc = formatCodeDescription(item.code);
+                                                                                    return desc ? (
+                                                                                        <div className="text-[10px] text-zinc-400 dark:text-zinc-500 max-w-[250px] truncate">{desc}</div>
+                                                                                    ) : null;
+                                                                                })()}
+                                                                            </div>
                                                                             {alreadySaved && !status && (
                                                                                 <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                                                                                     <Check className="h-3.5 w-3.5" /> {t.alreadySaved}

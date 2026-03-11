@@ -130,6 +130,17 @@ function buildUserMessage(record) {
     return parts.join("\n");
 }
 
+/** Look up a cost code in the list and return its hierarchical description */
+function lookupCodeDescription(codes, kisaKod, isOld) {
+    if (!kisaKod) return null;
+    const match = codes.find((c) => c.kisaKod === kisaKod);
+    if (!match) return null;
+    if (isOld) {
+        return { mainGroup: match.enMainGroup || "", costGroup: match.costGroup || "", title: match.enTitle || "" };
+    }
+    return { mainGroup: match.mainGroup || "", subGroup: match.subGroup || "", childGroup: match.childGroup || "", title: match.title || "" };
+}
+
 function parseSuggestion(content) {
     if (!content) return null;
     try {
@@ -250,10 +261,12 @@ export async function POST(request) {
                 const suggestion = parseSuggestion(content);
                 const usage = res.data.usage || {};
                 const cost = calcCost(usage, model);
+                const codeDescription = lookupCodeDescription(codes, suggestion, useOld);
 
                 results.push({
                     uniquecode: record.uniquecode,
                     suggestion,
+                    codeDescription,
                     reasoning,
                     request: { systemMessage, userMessage, model },
                     response: res.data,
@@ -279,7 +292,7 @@ export async function POST(request) {
 
         return NextResponse.json({
             results,
-            costCodeList: { name: listName, itemCount: codes.length },
+            costCodeList: { name: listName, itemCount: codes.length, codes, isOld: useOld },
         });
     } catch (error) {
         console.error("Cost code classify error:", error);
