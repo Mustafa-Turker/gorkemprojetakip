@@ -368,7 +368,7 @@ export default function CostCodesPage() {
     const [saveProgress, setSaveProgress] = useState<Record<string, "pending" | "saving" | "saved" | "error">>({});
     const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
-    const [savedItems, setSavedItems] = useState<Record<string, string>>({}); // uniquecode → verified saved code
+    const [savedItems, setSavedItems] = useState<Record<string, { code: string; cellAddress?: string; filePath?: string }>>({}); // uniquecode → save details
 
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
@@ -1574,7 +1574,7 @@ export default function CostCodesPage() {
                                                 <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300">
                                                     <Check className="h-5 w-5 shrink-0" />
                                                     <span className="font-semibold text-sm">{t.alreadySaved}</span>
-                                                    <span className="font-mono text-sm ml-auto">{savedItems[item.uniquecode]}</span>
+                                                    <span className="font-mono text-sm ml-auto">{savedItems[item.uniquecode]?.code}</span>
                                                 </div>
                                             ) : (
                                                 <div className="flex gap-2">
@@ -1710,6 +1710,11 @@ export default function CostCodesPage() {
                                                                             )}
                                                                         </div>
                                                                     </div>
+                                                                    {status === "saved" && savedItems[item.uniquecode]?.cellAddress && (
+                                                                        <div className="mt-1 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 rounded px-2 py-1 font-mono break-all">
+                                                                            {savedItems[item.uniquecode].cellAddress} — {savedItems[item.uniquecode].filePath?.split("/").pop()}
+                                                                        </div>
+                                                                    )}
                                                                     {status === "error" && saveErrors[item.uniquecode] && (
                                                                         <div className="mt-1 text-xs text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 rounded px-2 py-1 break-all">
                                                                             {saveErrors[item.uniquecode]}
@@ -1787,7 +1792,7 @@ export default function CostCodesPage() {
                                                                         if (data.success && data.verified) {
                                                                             setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
                                                                             setSaveErrors((prev) => { const n = { ...prev }; delete n[item.uniquecode]; return n; });
-                                                                            setSavedItems((prev) => ({ ...prev, [item.uniquecode]: item.code }));
+                                                                            setSavedItems((prev) => ({ ...prev, [item.uniquecode]: { code: item.code, cellAddress: data.cellAddress, filePath: data.filePath } }));
                                                                         } else if (data.success && !data.verified) {
                                                                             setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
                                                                             setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: t.verificationFailed + (data.readBackValue ? ` (${data.readBackValue})` : "") }));
@@ -1847,7 +1852,7 @@ export default function CostCodesPage() {
                                                                     const data = await resp.json();
                                                                     if (data.success && data.verified) {
                                                                         setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
-                                                                        setSavedItems((prev) => ({ ...prev, [item.uniquecode]: item.code }));
+                                                                        setSavedItems((prev) => ({ ...prev, [item.uniquecode]: { code: item.code, cellAddress: data.cellAddress, filePath: data.filePath } }));
                                                                     } else if (data.success && !data.verified) {
                                                                         setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
                                                                         setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: t.verificationFailed + (data.readBackValue ? ` (${data.readBackValue})` : "") }));
