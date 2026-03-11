@@ -127,7 +127,8 @@ export async function POST(request) {
                     token, sessionId, { method: "POST", body: JSON.stringify({ password: "Gorkem.2020" }) }
                 );
                 if (!unprotectRetry.ok) {
-                    throw new Error("Cannot unprotect sheet (password mismatch)");
+                    const errMsg = unprotectRetry.data?.error?.message || JSON.stringify(unprotectRetry.data);
+                    throw new Error(`Cannot unprotect sheet "${SHEET_NAME}" (status ${unprotectRetry.status}): ${errMsg}`);
                 }
             }
 
