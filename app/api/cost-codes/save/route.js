@@ -155,7 +155,7 @@ export async function POST(request) {
             }
 
             if (matchedRowIndex === -1) {
-                throw new Error(`Row not found: no matching description in Excel file (searched ${rows.length} rows)`);
+                throw new Error(`Row not found: no matching description in Excel file (searched ${rows.length} rows). Looking for: "${aciklama.trim().substring(0, 80)}"`);
             }
 
             // Step 5: Get data body range to compute cell address
