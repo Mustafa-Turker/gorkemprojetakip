@@ -1544,8 +1544,9 @@ export default function CostCodesPage() {
                                     const item = reviewableItems[reviewIndex];
                                     if (!item) return null;
                                     const decision = reviewDecisions[item.uniquecode];
+                                    const alreadySaved = !!savedItems[item.uniquecode];
                                     return (
-                                        <div className={`rounded-lg border p-4 space-y-3 ${decision === "accepted" ? "border-emerald-300 dark:border-emerald-800" : decision === "declined" ? "border-rose-300 dark:border-rose-800" : "border-zinc-200 dark:border-zinc-800"}`}>
+                                        <div className={`rounded-lg border p-4 space-y-3 ${alreadySaved ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/10" : decision === "accepted" ? "border-emerald-300 dark:border-emerald-800" : decision === "declined" ? "border-rose-300 dark:border-rose-800" : "border-zinc-200 dark:border-zinc-800"}`}>
                                             {/* Record info */}
                                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                                                 <div><span className="text-zinc-500">{t.code}:</span> <span className="font-mono">{item.uniquecode}</span></div>
@@ -1568,41 +1569,49 @@ export default function CostCodesPage() {
                                                 </div>
                                             )}
 
-                                            {/* Accept / Decline */}
-                                            <div className="flex gap-2">
-                                                <Button
-                                                    onClick={() => setReviewDecisions((prev) => {
-                                                        if (prev[item.uniquecode] === "accepted") {
-                                                            const next = { ...prev };
-                                                            delete next[item.uniquecode];
-                                                            return next;
-                                                        }
-                                                        return { ...prev, [item.uniquecode]: "accepted" };
-                                                    })}
-                                                    variant={decision === "accepted" ? "default" : "outline"}
-                                                    className={decision === "accepted" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
-                                                    size="sm"
-                                                >
-                                                    <Check className="h-4 w-4 mr-1" />
-                                                    {t.reviewAccept}
-                                                </Button>
-                                                <Button
-                                                    onClick={() => setReviewDecisions((prev) => {
-                                                        if (prev[item.uniquecode] === "declined") {
-                                                            const next = { ...prev };
-                                                            delete next[item.uniquecode];
-                                                            return next;
-                                                        }
-                                                        return { ...prev, [item.uniquecode]: "declined" };
-                                                    })}
-                                                    variant={decision === "declined" ? "default" : "outline"}
-                                                    className={decision === "declined" ? "bg-rose-600 hover:bg-rose-700 text-white" : ""}
-                                                    size="sm"
-                                                >
-                                                    <X className="h-4 w-4 mr-1" />
-                                                    {t.reviewDecline}
-                                                </Button>
-                                            </div>
+                                            {/* Accept / Decline or Already Saved */}
+                                            {alreadySaved ? (
+                                                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300">
+                                                    <Check className="h-5 w-5 shrink-0" />
+                                                    <span className="font-semibold text-sm">{t.alreadySaved}</span>
+                                                    <span className="font-mono text-sm ml-auto">{savedItems[item.uniquecode]}</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        onClick={() => setReviewDecisions((prev) => {
+                                                            if (prev[item.uniquecode] === "accepted") {
+                                                                const next = { ...prev };
+                                                                delete next[item.uniquecode];
+                                                                return next;
+                                                            }
+                                                            return { ...prev, [item.uniquecode]: "accepted" };
+                                                        })}
+                                                        variant={decision === "accepted" ? "default" : "outline"}
+                                                        className={decision === "accepted" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
+                                                        size="sm"
+                                                    >
+                                                        <Check className="h-4 w-4 mr-1" />
+                                                        {t.reviewAccept}
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() => setReviewDecisions((prev) => {
+                                                            if (prev[item.uniquecode] === "declined") {
+                                                                const next = { ...prev };
+                                                                delete next[item.uniquecode];
+                                                                return next;
+                                                            }
+                                                            return { ...prev, [item.uniquecode]: "declined" };
+                                                        })}
+                                                        variant={decision === "declined" ? "default" : "outline"}
+                                                        className={decision === "declined" ? "bg-rose-600 hover:bg-rose-700 text-white" : ""}
+                                                        size="sm"
+                                                    >
+                                                        <X className="h-4 w-4 mr-1" />
+                                                        {t.reviewDecline}
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })()}
