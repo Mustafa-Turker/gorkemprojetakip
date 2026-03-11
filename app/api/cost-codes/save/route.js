@@ -168,7 +168,21 @@ export async function POST(request) {
             }
 
             if (matchedRowIndex === -1) {
-                throw new Error(`Row not found: no matching row with order=${orderNumber} and description in Excel file (searched ${rows.length} rows). Looking for: "${aciklama.trim().substring(0, 80)}"`);
+                // Diagnostic: find desc-only matches and show their column 0 values
+                const descMatches = [];
+                for (let i = 0; i < rows.length; i++) {
+                    const rowValues = rows[i].values?.[0] || [];
+                    const excelDesc = String(rowValues[DESC_COL_INDEX] || "").trim().toLowerCase();
+                    if (excelDesc === normalizedAciklama) {
+                        descMatches.push({ row: i, col0: rowValues[ORDER_COL_INDEX], col0type: typeof rowValues[ORDER_COL_INDEX] });
+                    }
+                }
+                // Also sample first 3 rows' column 0
+                const sample = rows.slice(0, 3).map((r, i) => {
+                    const v = r.values?.[0]?.[ORDER_COL_INDEX];
+                    return `row${i}:col0=${JSON.stringify(v)}(${typeof v})`;
+                });
+                throw new Error(`Row not found: order=${orderNumber}, searched ${rows.length} rows. Desc matches: ${JSON.stringify(descMatches)}. Sample col0: [${sample.join(", ")}]. Looking for: "${aciklama.trim().substring(0, 80)}"`);
             }
 
             // Step 5: Get data body range to compute cell address
