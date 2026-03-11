@@ -191,6 +191,10 @@ const translations = {
         saveFailed: "Failed",
         retryFailed: "Retry Failed",
         savingProgress: "Saving",
+        alreadySaved: "Already Saved",
+        verificationFailed: "Verification failed",
+        saveVerified: "Saved & Verified",
+        allSavedSuccess: "All items saved and verified successfully!",
     },
     tr: {
         title: "Masraf Merkezi",
@@ -297,6 +301,10 @@ const translations = {
         saveFailed: "Basarisiz",
         retryFailed: "Basarisizlari Tekrarla",
         savingProgress: "Kaydediliyor",
+        alreadySaved: "Zaten Kaydedildi",
+        verificationFailed: "Dogrulama basarisiz",
+        saveVerified: "Kaydedildi ve Dogrulandi",
+        allSavedSuccess: "Tum kayitlar basariyla kaydedildi ve dogrulandi!",
     },
 } as const;
 
@@ -360,6 +368,7 @@ export default function CostCodesPage() {
     const [saveProgress, setSaveProgress] = useState<Record<string, "pending" | "saving" | "saved" | "error">>({});
     const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [savedItems, setSavedItems] = useState<Record<string, string>>({}); // uniquecode → verified saved code
 
     // Sticky filter bar ref
     const filterBarRef = useRef<HTMLDivElement>(null);
@@ -388,6 +397,7 @@ export default function CostCodesPage() {
         setShowMissingOnly(false);
         setAiResults({});
         setAcceptedCodes({});
+        setSavedItems({});
 
         try {
             let url = `/api/documents?year=${year}&includeMissingDocs=true`;
@@ -1669,14 +1679,20 @@ export default function CostCodesPage() {
                                                     </div>
                                                     <div className="max-h-[200px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
                                                         {accepted.map((item) => {
+                                                            const alreadySaved = !!savedItems[item.uniquecode];
                                                             const status = saveProgress[item.uniquecode];
                                                             return (
-                                                                <div key={item.uniquecode} className="px-3 py-2 flex items-center justify-between text-sm gap-2">
+                                                                <div key={item.uniquecode} className={`px-3 py-2 flex items-center justify-between text-sm gap-2 ${alreadySaved && !status ? "bg-emerald-50/50 dark:bg-emerald-950/10" : ""}`}>
                                                                     <span className="font-mono text-xs truncate">{item.uniquecode}</span>
                                                                     <div className="flex items-center gap-2 shrink-0">
                                                                         <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{item.code}</span>
+                                                                        {alreadySaved && !status && (
+                                                                            <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                                                <Check className="h-3.5 w-3.5" /> {t.alreadySaved}
+                                                                            </span>
+                                                                        )}
                                                                         {status === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />}
-                                                                        {status === "saved" && <Check className="h-3.5 w-3.5 text-emerald-500" />}
+                                                                        {status === "saved" && <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Check className="h-3.5 w-3.5" /> {t.saveVerified}</span>}
                                                                         {status === "error" && (
                                                                             <span className="text-xs text-rose-500" title={saveErrors[item.uniquecode]}>
                                                                                 <X className="h-3.5 w-3.5 inline" /> {t.saveFailed}
@@ -1704,6 +1720,14 @@ export default function CostCodesPage() {
                                                             </div>
                                                         ))}
                                                     </div>
+                                                </div>
+                                            )}
+
+                                            {/* Success message when all accepted are saved */}
+                                            {!isSaving && accepted.length > 0 && accepted.every((a) => savedItems[a.uniquecode]) && (
+                                                <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 p-3 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
+                                                    <Check className="h-5 w-5 shrink-0" />
+                                                    {t.allSavedSuccess}
                                                 </div>
                                             )}
 
@@ -1744,9 +1768,13 @@ export default function CostCodesPage() {
                                                                             }),
                                                                         });
                                                                         const data = await resp.json();
-                                                                        if (data.success) {
+                                                                        if (data.success && data.verified) {
                                                                             setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
                                                                             setSaveErrors((prev) => { const n = { ...prev }; delete n[item.uniquecode]; return n; });
+                                                                            setSavedItems((prev) => ({ ...prev, [item.uniquecode]: item.code }));
+                                                                        } else if (data.success && !data.verified) {
+                                                                            setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                            setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: t.verificationFailed + (data.readBackValue ? ` (${data.readBackValue})` : "") }));
                                                                         } else {
                                                                             setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
                                                                             setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: data.error || "Unknown error" }));
@@ -1765,8 +1793,11 @@ export default function CostCodesPage() {
                                                     )}
                                                     <Button
                                                         size="sm"
-                                                        disabled={accepted.length === 0 || isSaving}
+                                                        disabled={accepted.filter((a) => !savedItems[a.uniquecode]).length === 0 || isSaving}
                                                         onClick={async () => {
+                                                            const toSave = accepted.filter((a) => !savedItems[a.uniquecode]);
+                                                            if (toSave.length === 0) return;
+
                                                             // Write accepted into acceptedCodes, remove declined
                                                             setAcceptedCodes((prev) => {
                                                                 const next = { ...prev };
@@ -1775,16 +1806,15 @@ export default function CostCodesPage() {
                                                                 return next;
                                                             });
 
-                                                            // Initialize save progress
+                                                            // Initialize save progress (only for unsaved items)
                                                             const progress: Record<string, "pending" | "saving" | "saved" | "error"> = {};
-                                                            accepted.forEach((a) => { progress[a.uniquecode] = "pending"; });
+                                                            toSave.forEach((a) => { progress[a.uniquecode] = "pending"; });
                                                             setSaveProgress(progress);
                                                             setSaveErrors({});
                                                             setIsSaving(true);
 
                                                             // Save one-by-one
-                                                            let savedCount = 0;
-                                                            for (const item of accepted) {
+                                                            for (const item of toSave) {
                                                                 setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saving" }));
                                                                 try {
                                                                     const resp = await fetch("/api/cost-codes/save", {
@@ -1799,9 +1829,12 @@ export default function CostCodesPage() {
                                                                         }),
                                                                     });
                                                                     const data = await resp.json();
-                                                                    if (data.success) {
+                                                                    if (data.success && data.verified) {
                                                                         setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "saved" }));
-                                                                        savedCount++;
+                                                                        setSavedItems((prev) => ({ ...prev, [item.uniquecode]: item.code }));
+                                                                    } else if (data.success && !data.verified) {
+                                                                        setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
+                                                                        setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: t.verificationFailed + (data.readBackValue ? ` (${data.readBackValue})` : "") }));
                                                                     } else {
                                                                         setSaveProgress((prev) => ({ ...prev, [item.uniquecode]: "error" }));
                                                                         setSaveErrors((prev) => ({ ...prev, [item.uniquecode]: data.error || "Unknown error" }));
@@ -1819,12 +1852,17 @@ export default function CostCodesPage() {
                                                         {isSaving ? (
                                                             <>
                                                                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                                                {t.savingProgress} {Object.values(saveProgress).filter((s) => s === "saved" || s === "error").length}/{accepted.length}
+                                                                {t.savingProgress} {Object.values(saveProgress).filter((s) => s === "saved" || s === "error").length}/{Object.keys(saveProgress).length}
+                                                            </>
+                                                        ) : accepted.filter((a) => !savedItems[a.uniquecode]).length === 0 ? (
+                                                            <>
+                                                                <Check className="h-4 w-4 mr-1" />
+                                                                {t.alreadySaved}
                                                             </>
                                                         ) : (
                                                             <>
                                                                 <Save className="h-4 w-4 mr-1" />
-                                                                {t.reviewSaveAll} ({accepted.length})
+                                                                {t.reviewSaveAll} ({accepted.filter((a) => !savedItems[a.uniquecode]).length})
                                                             </>
                                                         )}
                                                     </Button>

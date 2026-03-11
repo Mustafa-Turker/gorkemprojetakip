@@ -199,13 +199,31 @@ export async function POST(request) {
                 throw new Error(`Write failed: ${writeResp.data?.error?.message || writeResp.status}`);
             }
 
+            // Step 7: Verify — read back the cell value
+            let verified = false;
+            let readBackValue = null;
+            try {
+                const verifyResp = await graphFetch(
+                    `${wbBase}/worksheets/${SHEET_NAME}/range(address='${cellAddress}')`,
+                    token, sessionId
+                );
+                if (verifyResp.ok) {
+                    readBackValue = verifyResp.data?.values?.[0]?.[0];
+                    verified = String(readBackValue || "").trim() === costCode.trim();
+                }
+            } catch {
+                // Verification read failed — write may still have succeeded
+            }
+
             return NextResponse.json({
                 success: true,
+                verified,
                 uniquecode,
                 filePath,
                 cellAddress,
                 rowIndex: matchedRowIndex,
                 writtenValue: costCode,
+                readBackValue,
             });
         } finally {
             // Step 7: Always close session
