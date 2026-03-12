@@ -282,6 +282,7 @@ export default function UploadPage() {
     const [selectedPages, setSelectedPages] = useState<number[]>([]);
     const [pageThumbnails, setPageThumbnails] = useState<string[]>([]);
     const [renderingThumbnails, setRenderingThumbnails] = useState(false);
+    const [usedPages, setUsedPages] = useState<Map<number, string>>(new Map()); // pageIdx → order number
 
     // Upload state
     const [uploading, setUploading] = useState(false);
@@ -461,6 +462,7 @@ export default function UploadPage() {
         setPageThumbnails([]);
         setRenderingThumbnails(false);
         setUploadResult(null);
+        setUsedPages(new Map());
     }, []);
 
     // Handle upload
@@ -500,6 +502,15 @@ export default function UploadPage() {
                         size: result.size || 0,
                     }}));
                 }
+                // Mark pages as used with the order number from uniquecode
+                const orderNum = selectedRecord.uniquecode.split(".").pop() || "";
+                setUsedPages(prev => {
+                    const next = new Map(prev);
+                    for (const p of selectedPages) {
+                        next.set(p, orderNum);
+                    }
+                    return next;
+                });
                 setSelectedRecord(null);
                 setPageRangeInput("");
                 setSelectedPages([]);
@@ -993,6 +1004,11 @@ export default function UploadPage() {
                                                             {isPageSelected && (
                                                                 <div className="absolute top-1 right-1">
                                                                     <CheckCircle2 className="h-4 w-4 text-indigo-500 drop-shadow-md" />
+                                                                </div>
+                                                            )}
+                                                            {usedPages.has(idx) && (
+                                                                <div className="absolute top-0 left-0 right-0 bg-emerald-600/85 text-white text-[9px] font-bold text-center py-0.5 tracking-wide">
+                                                                    USED ({usedPages.get(idx)})
                                                                 </div>
                                                             )}
                                                             {/* Full-page preview button */}
