@@ -280,6 +280,40 @@ function CashFlowContent() {
                                 </ResponsiveContainer>
                             </div>
                         )}
+
+                        {/* Calculation Filters */}
+                        <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/50 shadow-lg shadow-zinc-900/5 dark:shadow-black/20 p-5">
+                            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Calculation Filters</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-indigo-500 shrink-0" />
+                                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Cost</span>
+                                    </div>
+                                    <div className="pl-5 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Source:</span> view_muhasebe_konsolide</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Partner:</span> GORKEM</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Source:</span> ANK, BAG <span className="text-zinc-400">(ERB excluded)</span></p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Cost:</span> &gt; 0</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Amount:</span> SUM(-1 &times; usd_degeri)</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
+                                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Spent</span>
+                                    </div>
+                                    <div className="pl-5 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Source:</span> view_muhasebe_konsolide</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Partner:</span> GORKEM</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Source:</span> ANK, BAG <span className="text-zinc-400">(ERB excluded)</span></p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Cost:</span> &gt; 0</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">IslemTuru:</span> &ne; TAH-CA</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Amount:</span> SUM(-1 &times; usd_degeri)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </>
                 )}
             </main>
