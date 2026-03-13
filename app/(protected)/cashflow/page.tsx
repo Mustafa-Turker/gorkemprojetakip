@@ -297,6 +297,9 @@ function CashFlowContent() {
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Cost:</span> &gt; 0</p>
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">IslemTuru:</span> &ne; KS-CA, BN-CA</p>
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Amount:</span> SUM(-1 &times; usd_degeri)</p>
+                                        <p className="pt-1 text-zinc-600 dark:text-zinc-300 font-medium">+ Unclassified (masrafmerkezi = empty):</p>
+                                        <p className="pl-2"><span className="text-zinc-700 dark:text-zinc-300 font-medium">1.</span> SUM(-1 &times; forgotten_cost)</p>
+                                        <p className="pl-2"><span className="text-zinc-700 dark:text-zinc-300 font-medium">2.</span> SUM(-1 &times; usd_degeri) where islemturu &ne; KS-CA, BN-CA</p>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
