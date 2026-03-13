@@ -86,6 +86,15 @@ function CustomTooltip({ active, payload, label }: any) {
                     </span>
                 </div>
             ))}
+            {payload.length === 2 && (
+                <div className="flex items-center gap-2 text-sm mt-1 pt-1 border-t border-zinc-200/50 dark:border-zinc-700/50">
+                    <div className="w-3 h-3 shrink-0" />
+                    <span className="text-zinc-600 dark:text-zinc-400">Difference:</span>
+                    <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                        {formatCurrency(payload[0].value - payload[1].value)}
+                    </span>
+                </div>
+            )}
         </div>
     );
 }
