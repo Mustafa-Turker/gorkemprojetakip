@@ -309,7 +309,7 @@ function CashFlowContent() {
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Partner:</span> GORKEM</p>
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Source:</span> ANK, BAG <span className="text-zinc-400">(ERB excluded)</span></p>
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Cost:</span> &gt; 0</p>
-                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">IslemTuru:</span> &ne; TAH-CA, KS-CA, BN-CA</p>
+                                        <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">IslemTuru:</span> &ne; TAH-CA</p>
                                         <p><span className="text-zinc-700 dark:text-zinc-300 font-medium">Amount:</span> SUM(-1 &times; usd_degeri)</p>
                                     </div>
                                 </div>

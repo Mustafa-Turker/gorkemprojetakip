@@ -18,7 +18,7 @@ export async function GET(request) {
                 EXTRACT(YEAR FROM date)::int AS yr,
                 EXTRACT(MONTH FROM date)::int AS mo,
                 SUM(CASE WHEN COALESCE(islemturu, '') NOT IN ('KS-CA', 'BN-CA') THEN -1 * usd_degeri ELSE 0 END) AS total_cost,
-                SUM(CASE WHEN COALESCE(islemturu, '') NOT IN ('TAH-CA', 'KS-CA', 'BN-CA') THEN -1 * usd_degeri ELSE 0 END) AS total_spent
+                SUM(CASE WHEN COALESCE(islemturu, '') != 'TAH-CA' THEN -1 * usd_degeri ELSE 0 END) AS total_spent
             FROM public.view_muhasebe_konsolide
             WHERE projekodu = $1
                 AND date IS NOT NULL
