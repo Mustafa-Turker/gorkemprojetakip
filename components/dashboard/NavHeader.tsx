@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
     { href: "/", label: "Cost Metrics" },
+    { href: "/cashflow", label: "Cash Flow" },
     { href: "/received", label: "Received Amounts" },
     { href: "/balances", label: "Balances" },
     { href: "/study", label: "Study" },
