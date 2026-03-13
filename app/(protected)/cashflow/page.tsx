@@ -57,7 +57,7 @@ const PROJECT_LIST = Object.entries(PROJECTS)
     .sort(([, a], [, b]) => a.order - b.order)
     .map(([code, meta]) => ({ code, desc: meta.desc }));
 
-const SOURCES = ["ANK", "BAG", "ERB"];
+const SOURCES = ["ANK", "BAG"];
 
 interface CashflowRow {
     yr: number;

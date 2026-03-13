@@ -20,7 +20,11 @@ export async function GET(request) {
                 SUM(-1 * usd_degeri) AS total_cost,
                 SUM(CASE WHEN COALESCE(islemturu, '') != 'TAH-CA' THEN -1 * usd_degeri ELSE 0 END) AS total_spent
             FROM public.view_muhasebe_konsolide
-            WHERE projekodu = $1 AND date IS NOT NULL
+            WHERE projekodu = $1
+                AND date IS NOT NULL
+                AND partner = 'GORKEM'
+                AND source != 'ERB'
+                AND cost > 0
         `;
         const params = [project];
 
