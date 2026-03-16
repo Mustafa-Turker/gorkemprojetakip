@@ -1389,8 +1389,14 @@ export default function UploadPage() {
             setAutoMatchError(null);
             setMatchOverrides(new Map());
 
-            // Also load the PDF from SharePoint for thumbnails + save capability
-            if (!pdfArrayBuffer) {
+            // Always load the correct day's PDF from SharePoint
+            {
+                // Clear previous day's PDF
+                setPdfArrayBuffer(null);
+                setPdfFile(null);
+                setPageThumbnails([]);
+                setTotalPages(0);
+                setUsedPages(new Map());
                 try {
                     const pdfResp = await fetch(`/api/auto-match/pdf?year=${year}&month=${month}&day=${day}`);
                     if (pdfResp.ok) {
@@ -1429,7 +1435,7 @@ export default function UploadPage() {
             console.error("Failed to load monthly match data:", err);
             setAutoMatchError(t.noStoredMatchesDay);
         }
-    }, [year, month, day, t.noStoredMatchesDay, pdfArrayBuffer]);
+    }, [year, month, day, t.noStoredMatchesDay]);
 
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
