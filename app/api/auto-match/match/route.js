@@ -37,6 +37,15 @@ MATCHING STRATEGY (in order of reliability):
 2. SECONDARY: Match by vendor name — look for text matching the vendor (carifirma) field
 3. TERTIARY: Match by description keywords — look for words from aciklama on the page
 
+SKIP ADMINISTRATIVE PAGES:
+The first several pages of each PDF are administrative and must be COMPLETELY IGNORED. Never match any record to these pages. They fall into two categories:
+1. Cash Report Summary pages — identifiable by headers/keywords: CASH REPORT SUMMARY, PROJE KASASI, BANK ACCOUNT, TOTAL IN, TOTAL OUT, NET
+2. Daily Accounting Report pages — may span multiple pages. Identify by EITHER:
+   - The header "GÜNLÜK MUHASEBE RAPORU", OR
+   - Dense tabular row data containing columns like: Sira, Firma/Cari Ad, Firma/Cari Kod, Malzeme/Hizmet, Proje Kodu, Islem Turu, Kasa, Cikis Tutari, Giris Tutari, Para Br., USD Karsiligi (even if column headers are not visible on that page)
+All consecutive pages matching either pattern are administrative — skip them ALL.
+Start processing only from the first page where you detect a standalone voucher/document such as: GİDER PUSULASI, VİRMAN DEKONTU, bank receipts, Arabic-written company invoices, or any other standalone document.
+
 RULES:
 - One page CAN match multiple records (one document covering several transactions)
 - One record CAN require multiple consecutive pages (multi-page invoice)
