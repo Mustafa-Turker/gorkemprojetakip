@@ -35,6 +35,8 @@ import {
     Eye,
     Maximize2,
     ExternalLink,
+    Wand2,
+    Save,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -81,6 +83,26 @@ interface FileMetadata {
     lastModifiedDateTime: string;
     createdBy: string | null;
     size: number;
+}
+
+interface AutoMatchEntry {
+    uniquecode: string;
+    pages: number[];
+    confidence: "high" | "medium" | "low" | "unmatched";
+    reason: string;
+}
+
+interface AutoMatchResult {
+    matches: AutoMatchEntry[];
+    reasoning: string | null;
+    model: string;
+    fallbackUsed: boolean;
+    ocrCost: { pages: number; totalCost: number };
+    deepseekCost: { totalCost: number } | null;
+    totalCost: number;
+    ocrDurationMs: number;
+    deepseekDurationMs: number;
+    totalDurationMs: number;
 }
 
 const translations = {
@@ -139,6 +161,22 @@ const translations = {
         noPreview: "No preview available",
         openInSharePoint: "Open in SharePoint",
         close: "Close",
+        autoMatch: "Auto-Match",
+        autoMatchOcr: "Running OCR...",
+        autoMatchAi: "AI Matching...",
+        autoMatchDone: "Auto-match complete",
+        autoMatchNoPdf: "No PDF found for this date on SharePoint",
+        saveAllMatches: "Save All Matches",
+        savingMatches: "Saving...",
+        matchHigh: "High",
+        matchMedium: "Medium",
+        matchLow: "Low",
+        matchUnmatched: "Unmatched",
+        matchResults: "Match Results",
+        matchedCount: "Matched",
+        ocrCost: "OCR Cost",
+        aiCost: "AI Cost",
+        duration: "Duration",
         months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     },
     tr: {
@@ -196,6 +234,22 @@ const translations = {
         noPreview: "Onizleme mevcut degil",
         openInSharePoint: "SharePoint'te Ac",
         close: "Kapat",
+        autoMatch: "Otomatik Eslestir",
+        autoMatchOcr: "OCR calisiyor...",
+        autoMatchAi: "AI eslestiriyor...",
+        autoMatchDone: "Otomatik eslestirme tamamlandi",
+        autoMatchNoPdf: "Bu tarih icin SharePoint'te PDF bulunamadi",
+        saveAllMatches: "Tum Eslesmeleri Kaydet",
+        savingMatches: "Kaydediliyor...",
+        matchHigh: "Yuksek",
+        matchMedium: "Orta",
+        matchLow: "Dusuk",
+        matchUnmatched: "Eslestirilmedi",
+        matchResults: "Eslestirme Sonuclari",
+        matchedCount: "Eslesen",
+        ocrCost: "OCR Maliyet",
+        aiCost: "AI Maliyet",
+        duration: "Sure",
         months: ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
     },
 } as const;
@@ -299,6 +353,15 @@ export default function UploadPage() {
     const [docThumbnailUrl, setDocThumbnailUrl] = useState<string | null>(null);
     const [docThumbnailLoading, setDocThumbnailLoading] = useState(false);
 
+    // Auto-match state
+    const [autoMatching, setAutoMatching] = useState(false);
+    const [autoMatchStep, setAutoMatchStep] = useState<"ocr" | "match" | "">("");
+    const [autoMatchResults, setAutoMatchResults] = useState<AutoMatchResult | null>(null);
+    const [autoMatchError, setAutoMatchError] = useState<string | null>(null);
+    const [savingAllMatches, setSavingAllMatches] = useState(false);
+    const [saveAllProgress, setSaveAllProgress] = useState({ current: 0, total: 0 });
+    const [autoMatchDebugOpen, setAutoMatchDebugOpen] = useState(false);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Days in selected month
@@ -391,6 +454,8 @@ export default function UploadPage() {
         setSelectedRecord(null);
         setActivityLogOpen(false);
         setUploadResult(null);
+        setAutoMatchResults(null);
+        setAutoMatchError(null);
 
         try {
             const url = `/api/documents?year=${year}&month=${month}&day=${day}`;
@@ -588,6 +653,200 @@ export default function UploadPage() {
         setDocThumbnailLoading(false);
     }, [fileMetadata]);
 
+    // Get auto-match result for a specific record
+    const getMatchForRecord = useCallback((uniquecode: string): AutoMatchEntry | null => {
+        return autoMatchResults?.matches.find(m => m.uniquecode === uniquecode) || null;
+    }, [autoMatchResults]);
+
+    // Auto-match: OCR + AI matching
+    const handleAutoMatch = useCallback(async () => {
+        if (!records || records.length === 0) return;
+        setAutoMatching(true);
+        setAutoMatchError(null);
+        setAutoMatchResults(null);
+        setAutoMatchStep("ocr");
+
+        try {
+            // Start PDF download in background for thumbnails
+            const pdfPromise = fetch(`/api/auto-match/pdf?year=${year}&month=${month}&day=${day}`);
+
+            // Step 1: OCR
+            const ocrResp = await fetch("/api/auto-match/ocr", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ year: parseInt(year), month: parseInt(month), day: parseInt(day) }),
+            });
+
+            if (!ocrResp.ok) {
+                const err = await ocrResp.json();
+                if (ocrResp.status === 404) {
+                    setAutoMatchError(t.autoMatchNoPdf);
+                } else {
+                    setAutoMatchError(err.error || "OCR failed");
+                }
+                setAutoMatching(false);
+                setAutoMatchStep("");
+                return;
+            }
+
+            const ocrData = await ocrResp.json();
+
+            // Load PDF for thumbnails (should be ready by now)
+            try {
+                const pdfResp = await pdfPromise;
+                if (pdfResp.ok) {
+                    const buffer = await pdfResp.arrayBuffer();
+                    setPdfArrayBuffer(buffer);
+                    setPdfFile(null);
+                    setPageRangeInput("");
+                    setSelectedPages([]);
+                    setRenderingThumbnails(true);
+
+                    const pdfjsLib = await import("pdfjs-dist");
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+                    const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+                    const count = pdfDoc.numPages;
+                    setTotalPages(count);
+
+                    const thumbs: string[] = [];
+                    for (let i = 1; i <= count; i++) {
+                        const page = await pdfDoc.getPage(i);
+                        const viewport = page.getViewport({ scale: 0.4 });
+                        const canvas = document.createElement("canvas");
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        const ctx = canvas.getContext("2d")!;
+                        await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+                        thumbs.push(canvas.toDataURL("image/jpeg", 0.7));
+                    }
+                    setPageThumbnails(thumbs);
+                    setRenderingThumbnails(false);
+                }
+            } catch (pdfErr) {
+                console.error("PDF load for thumbnails failed:", pdfErr);
+            }
+
+            // Step 2: AI Matching
+            setAutoMatchStep("match");
+            const matchResp = await fetch("/api/auto-match/match", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ocrPages: ocrData.ocrPages,
+                    records: records.map(r => ({
+                        uniquecode: r.uniquecode,
+                        carifirma: r.carifirma,
+                        aciklama: r.aciklama,
+                        giris_tutar: r.giris_tutar,
+                        cikis_tutar: r.cikis_tutar,
+                        parabirimi: r.parabirimi,
+                        projekodu: r.projekodu,
+                        islemturu: r.islemturu,
+                    })),
+                }),
+            });
+
+            if (!matchResp.ok) {
+                const err = await matchResp.json();
+                setAutoMatchError(err.error || "Matching failed");
+                setAutoMatching(false);
+                setAutoMatchStep("");
+                return;
+            }
+
+            const matchData = await matchResp.json();
+            setAutoMatchResults({
+                matches: matchData.matches || [],
+                reasoning: matchData.reasoning,
+                model: matchData.model,
+                fallbackUsed: matchData.fallbackUsed,
+                ocrCost: ocrData.cost,
+                deepseekCost: matchData.cost,
+                totalCost: (ocrData.cost?.totalCost || 0) + (matchData.cost?.totalCost || 0),
+                ocrDurationMs: ocrData.durationMs,
+                deepseekDurationMs: matchData.durationMs,
+                totalDurationMs: (ocrData.durationMs || 0) + (matchData.durationMs || 0),
+            });
+        } catch (err) {
+            setAutoMatchError((err as Error).message);
+        } finally {
+            setAutoMatching(false);
+            setAutoMatchStep("");
+        }
+    }, [records, year, month, day, t.autoMatchNoPdf]);
+
+    // Save all matched records at once
+    const handleSaveAllMatches = useCallback(async () => {
+        if (!autoMatchResults || !pdfArrayBuffer || !records) return;
+
+        const toSave = autoMatchResults.matches.filter(m => {
+            if (m.pages.length === 0 || m.confidence === "unmatched") return false;
+            const record = records.find(r => r.uniquecode === m.uniquecode);
+            if (!record) return false;
+            return fileStatuses[record.doc] !== true;
+        });
+
+        if (toSave.length === 0) return;
+
+        setSavingAllMatches(true);
+        setSaveAllProgress({ current: 0, total: toSave.length });
+
+        const { PDFDocument } = await import("pdf-lib");
+
+        for (let i = 0; i < toSave.length; i++) {
+            const match = toSave[i];
+            const record = records.find(r => r.uniquecode === match.uniquecode);
+            if (!record) continue;
+
+            setSaveAllProgress({ current: i + 1, total: toSave.length });
+
+            try {
+                const src = await PDFDocument.load(pdfArrayBuffer, { ignoreEncryption: true });
+                const doc = await PDFDocument.create();
+                const pageIndices = match.pages.map(p => p - 1);
+                const pages = await doc.copyPages(src, pageIndices);
+                pages.forEach(p => doc.addPage(p));
+                const bytes = await doc.save();
+                const blob = new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+
+                const formData = new FormData();
+                formData.append("file", blob, getFilename(record.doc));
+                formData.append("docUrl", record.doc);
+
+                const resp = await fetch("/api/documents/upload", {
+                    method: "POST",
+                    body: formData,
+                });
+                const result = await resp.json();
+
+                if (resp.ok && result.success) {
+                    setFileStatuses(prev => ({ ...prev, [record.doc]: true }));
+                    if (result.id) {
+                        setFileMetadata(prev => ({ ...prev, [record.doc]: {
+                            id: result.id,
+                            createdDateTime: result.createdDateTime || new Date().toISOString(),
+                            lastModifiedDateTime: result.lastModifiedDateTime || new Date().toISOString(),
+                            createdBy: result.createdBy || null,
+                            size: result.size || 0,
+                        }}));
+                    }
+                    const orderNum = record.uniquecode.split(".").pop() || "";
+                    setUsedPages(prev => {
+                        const next = new Map(prev);
+                        for (const p of match.pages.map(pg => pg - 1)) {
+                            next.set(p, orderNum);
+                        }
+                        return next;
+                    });
+                }
+            } catch (err) {
+                console.error(`Failed to save ${match.uniquecode}:`, err);
+            }
+        }
+
+        setSavingAllMatches(false);
+    }, [autoMatchResults, pdfArrayBuffer, records, fileStatuses]);
+
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -613,7 +872,15 @@ export default function UploadPage() {
     const missingCount = records ? records.filter(r => fileStatuses[r.doc] === false).length : 0;
     const foundCount = records ? records.filter(r => fileStatuses[r.doc] === true).length : 0;
 
-    const canUpload = !!pdfFile && selectedPages.length > 0 && !!selectedRecord && !uploading;
+    const canUpload = (!!pdfFile || !!pdfArrayBuffer) && selectedPages.length > 0 && !!selectedRecord && !uploading;
+
+    // Auto-match summary
+    const matchedCount = autoMatchResults ? autoMatchResults.matches.filter(m => m.pages.length > 0).length : 0;
+    const savableCount = autoMatchResults && records ? autoMatchResults.matches.filter(m => {
+        if (m.pages.length === 0 || m.confidence === "unmatched") return false;
+        const record = records.find(r => r.uniquecode === m.uniquecode);
+        return record ? fileStatuses[record.doc] !== true : false;
+    }).length : 0;
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -670,6 +937,25 @@ export default function UploadPage() {
                         {isLoading ? t.loading : checking ? `${t.checking} ${checkProgress}` : t.bringData}
                     </Button>
 
+                    {records && records.length > 0 && !isLoading && (
+                        <Button
+                            onClick={handleAutoMatch}
+                            disabled={autoMatching || savingAllMatches}
+                            variant="outline"
+                            className="h-9 gap-2 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/20"
+                        >
+                            {autoMatching ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Wand2 className="h-4 w-4" />
+                            )}
+                            {autoMatching
+                                ? (autoMatchStep === "ocr" ? t.autoMatchOcr : t.autoMatchAi)
+                                : t.autoMatch
+                            }
+                        </Button>
+                    )}
+
                     {checkedAll && records && (
                         <div className="flex items-center gap-3 ml-auto text-xs">
                             <span className="text-zinc-500">{t.total}: <strong>{records.length}</strong></span>
@@ -686,6 +972,81 @@ export default function UploadPage() {
                         <AlertTitle>{t.error}</AlertTitle>
                         <AlertDescription>{error}</AlertDescription>
                     </Alert>
+                )}
+
+                {/* Auto-match error */}
+                {autoMatchError && (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>{t.error}</AlertTitle>
+                        <AlertDescription>{autoMatchError}</AlertDescription>
+                    </Alert>
+                )}
+
+                {/* Auto-match results summary */}
+                {autoMatchResults && (
+                    <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 shadow-sm p-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5">
+                                    <Wand2 className="h-4 w-4 text-violet-500" />
+                                    <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">{t.matchResults}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                        {t.matchedCount}: {matchedCount}/{autoMatchResults.matches.length}
+                                    </span>
+                                    <span className="text-zinc-400">|</span>
+                                    <span className="text-zinc-500">
+                                        {t.ocrCost}: ${autoMatchResults.ocrCost?.totalCost?.toFixed(3) || "0"}
+                                    </span>
+                                    <span className="text-zinc-500">
+                                        {t.aiCost}: ${autoMatchResults.deepseekCost?.totalCost?.toFixed(4) || "0"}
+                                    </span>
+                                    <span className="text-zinc-500">
+                                        {t.duration}: {((autoMatchResults.totalDurationMs || 0) / 1000).toFixed(1)}s
+                                    </span>
+                                    <span className="text-zinc-400 text-[10px]">({autoMatchResults.model}{autoMatchResults.fallbackUsed ? " fallback" : ""})</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {savableCount > 0 && (
+                                    <Button
+                                        onClick={handleSaveAllMatches}
+                                        disabled={savingAllMatches}
+                                        size="sm"
+                                        className="h-8 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white"
+                                    >
+                                        {savingAllMatches ? (
+                                            <>
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                {t.savingMatches} ({saveAllProgress.current}/{saveAllProgress.total})
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="h-3.5 w-3.5" />
+                                                {t.saveAllMatches} ({savableCount})
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                                <button
+                                    onClick={() => setAutoMatchDebugOpen(!autoMatchDebugOpen)}
+                                    className="text-[10px] text-violet-500 hover:text-violet-700 dark:hover:text-violet-300 underline"
+                                >
+                                    {autoMatchDebugOpen ? "Hide" : "Debug"}
+                                </button>
+                            </div>
+                        </div>
+                        {autoMatchDebugOpen && autoMatchResults.reasoning && (
+                            <div className="mt-3 pt-3 border-t border-violet-200 dark:border-violet-800">
+                                <p className="text-xs font-medium text-violet-600 dark:text-violet-400 mb-1">AI Reasoning:</p>
+                                <pre className="text-[10px] text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap max-h-60 overflow-y-auto bg-white dark:bg-zinc-900 rounded p-2 border border-zinc-200 dark:border-zinc-800">
+                                    {autoMatchResults.reasoning}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* Activity log */}
@@ -779,10 +1140,26 @@ export default function UploadPage() {
                                     const giris = Math.abs(Number(record.giris_tutar) || 0);
                                     const cikis = Math.abs(Number(record.cikis_tutar) || 0);
                                     const currency = record.parabirimi || "";
+                                    const match = getMatchForRecord(record.uniquecode);
                                     return (
                                         <div
                                             key={record.uniquecode}
-                                            onClick={() => setSelectedRecord(record)}
+                                            onClick={() => {
+                                                setSelectedRecord(record);
+                                                if (match && match.pages.length > 0) {
+                                                    const sorted = [...match.pages].sort((a, b) => a - b);
+                                                    const ranges: string[] = [];
+                                                    let j = 0;
+                                                    while (j < sorted.length) {
+                                                        const start = sorted[j];
+                                                        let end = start;
+                                                        while (j + 1 < sorted.length && sorted[j + 1] === end + 1) { end = sorted[++j]; }
+                                                        ranges.push(start === end ? String(start) : `${start}-${end}`);
+                                                        j++;
+                                                    }
+                                                    setPageRangeInput(ranges.join(", "));
+                                                }
+                                            }}
                                             className={cn(
                                                 "rounded-lg border px-3 py-2 cursor-pointer transition-all duration-150 hover:shadow-md",
                                                 isSelected
@@ -833,6 +1210,24 @@ export default function UploadPage() {
                                                         <span className="text-xs text-zinc-400">-</span>
                                                     )}
                                                 </div>
+                                                {/* Auto-match badge */}
+                                                {match && (
+                                                    <div className="shrink-0">
+                                                        {match.confidence === "unmatched" ? (
+                                                            <Badge variant="outline" className="text-[9px] px-1 py-0 text-zinc-400 border-zinc-300 dark:border-zinc-700">
+                                                                {t.matchUnmatched}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className={cn("text-[9px] px-1 py-0", {
+                                                                "text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-700": match.confidence === "high",
+                                                                "text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700": match.confidence === "medium",
+                                                                "text-rose-600 border-rose-300 dark:text-rose-400 dark:border-rose-700": match.confidence === "low",
+                                                            })}>
+                                                                p.{match.pages.join(",")} {match.confidence === "high" ? t.matchHigh : match.confidence === "medium" ? t.matchMedium : t.matchLow}
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 {/* View details button */}
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setViewDetailRecord(record); }}
