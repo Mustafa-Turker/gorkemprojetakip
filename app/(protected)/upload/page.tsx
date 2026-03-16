@@ -167,7 +167,10 @@ const translations = {
         autoMatchDone: "Auto-match complete",
         autoMatchNoPdf: "No PDF found for this date on SharePoint",
         saveAllMatches: "Save All Matches",
+        saveHighOnly: "Save High Only",
         savingMatches: "Saving...",
+        edited: "edited",
+        matchedPages: "Matched Pages",
         matchHigh: "High",
         matchMedium: "Medium",
         matchLow: "Low",
@@ -240,7 +243,10 @@ const translations = {
         autoMatchDone: "Otomatik eslestirme tamamlandi",
         autoMatchNoPdf: "Bu tarih icin SharePoint'te PDF bulunamadi",
         saveAllMatches: "Tum Eslesmeleri Kaydet",
+        saveHighOnly: "Sadece Yuksek Guvenli",
         savingMatches: "Kaydediliyor...",
+        edited: "duzenlendi",
+        matchedPages: "Eslesen Sayfalar",
         matchHigh: "Yuksek",
         matchMedium: "Orta",
         matchLow: "Dusuk",
@@ -292,6 +298,20 @@ function formatDate(dateStr: string) {
     } catch {
         return dateStr;
     }
+}
+
+function pagesToRangeString(pages: number[]): string {
+    const sorted = [...pages].sort((a, b) => a - b);
+    const ranges: string[] = [];
+    let i = 0;
+    while (i < sorted.length) {
+        const start = sorted[i];
+        let end = start;
+        while (i + 1 < sorted.length && sorted[i + 1] === end + 1) { end = sorted[++i]; }
+        ranges.push(start === end ? String(start) : `${start}-${end}`);
+        i++;
+    }
+    return ranges.join(", ");
 }
 
 function getFilename(docUrl: string) {
@@ -361,6 +381,7 @@ export default function UploadPage() {
     const [savingAllMatches, setSavingAllMatches] = useState(false);
     const [saveAllProgress, setSaveAllProgress] = useState({ current: 0, total: 0 });
     const [autoMatchDebugOpen, setAutoMatchDebugOpen] = useState(false);
+    const [matchOverrides, setMatchOverrides] = useState<Map<string, number[]>>(new Map());
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -456,6 +477,7 @@ export default function UploadPage() {
         setUploadResult(null);
         setAutoMatchResults(null);
         setAutoMatchError(null);
+        setMatchOverrides(new Map());
 
         try {
             const url = `/api/documents?year=${year}&month=${month}&day=${day}`;
@@ -658,12 +680,49 @@ export default function UploadPage() {
         return autoMatchResults?.matches.find(m => m.uniquecode === uniquecode) || null;
     }, [autoMatchResults]);
 
+    // Get effective pages for a record (override > AI match)
+    const getEffectivePages = useCallback((uniquecode: string): number[] => {
+        const override = matchOverrides.get(uniquecode);
+        if (override) return override;
+        const match = autoMatchResults?.matches.find(m => m.uniquecode === uniquecode);
+        return match?.pages || [];
+    }, [matchOverrides, autoMatchResults]);
+
+    // Select a record — save override for previous, load pages for new
+    const handleRecordSelect = useCallback((record: DocumentRecord) => {
+        // Save current page selection as override for the leaving record
+        if (selectedRecord && autoMatchResults) {
+            const prevMatch = getMatchForRecord(selectedRecord.uniquecode);
+            if (prevMatch && prevMatch.pages.length > 0 && selectedPages.length > 0) {
+                const currentPages = selectedPages.map(p => p + 1).sort((a, b) => a - b);
+                setMatchOverrides(prev => {
+                    const next = new Map(prev);
+                    next.set(selectedRecord.uniquecode, currentPages);
+                    return next;
+                });
+            }
+        }
+
+        setSelectedRecord(record);
+
+        // Load pages: override > AI match
+        const override = matchOverrides.get(record.uniquecode);
+        const match = getMatchForRecord(record.uniquecode);
+        const pages = override || match?.pages || [];
+        if (pages.length > 0) {
+            setPageRangeInput(pagesToRangeString(pages));
+        } else {
+            setPageRangeInput("");
+        }
+    }, [selectedRecord, autoMatchResults, getMatchForRecord, selectedPages, matchOverrides]);
+
     // Auto-match: OCR + AI matching
     const handleAutoMatch = useCallback(async () => {
         if (!records || records.length === 0) return;
         setAutoMatching(true);
         setAutoMatchError(null);
         setAutoMatchResults(null);
+        setMatchOverrides(new Map());
         setAutoMatchStep("ocr");
 
         try {
@@ -775,35 +834,43 @@ export default function UploadPage() {
         }
     }, [records, year, month, day, t.autoMatchNoPdf]);
 
-    // Save all matched records at once
-    const handleSaveAllMatches = useCallback(async () => {
-        if (!autoMatchResults || !pdfArrayBuffer || !records) return;
+    // Core save function — processes a list of {uniquecode, pages} pairs
+    const saveMatches = useCallback(async (itemsToSave: { uniquecode: string; pages: number[] }[]) => {
+        if (!pdfArrayBuffer || !records || itemsToSave.length === 0) return;
 
-        const toSave = autoMatchResults.matches.filter(m => {
-            if (m.pages.length === 0 || m.confidence === "unmatched") return false;
-            const record = records.find(r => r.uniquecode === m.uniquecode);
-            if (!record) return false;
-            return fileStatuses[record.doc] !== true;
-        });
-
-        if (toSave.length === 0) return;
+        // Save override for currently selected record before batch processing
+        if (selectedRecord && autoMatchResults) {
+            const prevMatch = getMatchForRecord(selectedRecord.uniquecode);
+            if (prevMatch && prevMatch.pages.length > 0 && selectedPages.length > 0) {
+                const currentPages = selectedPages.map(p => p + 1).sort((a, b) => a - b);
+                setMatchOverrides(prev => {
+                    const next = new Map(prev);
+                    next.set(selectedRecord.uniquecode, currentPages);
+                    return next;
+                });
+            }
+        }
 
         setSavingAllMatches(true);
-        setSaveAllProgress({ current: 0, total: toSave.length });
+        setSaveAllProgress({ current: 0, total: itemsToSave.length });
 
         const { PDFDocument } = await import("pdf-lib");
 
-        for (let i = 0; i < toSave.length; i++) {
-            const match = toSave[i];
-            const record = records.find(r => r.uniquecode === match.uniquecode);
+        for (let i = 0; i < itemsToSave.length; i++) {
+            const item = itemsToSave[i];
+            const record = records.find(r => r.uniquecode === item.uniquecode);
             if (!record) continue;
 
-            setSaveAllProgress({ current: i + 1, total: toSave.length });
+            // Use effective pages (override > AI match)
+            const effectivePages = matchOverrides.get(item.uniquecode) || item.pages;
+            if (effectivePages.length === 0) continue;
+
+            setSaveAllProgress({ current: i + 1, total: itemsToSave.length });
 
             try {
                 const src = await PDFDocument.load(pdfArrayBuffer, { ignoreEncryption: true });
                 const doc = await PDFDocument.create();
-                const pageIndices = match.pages.map(p => p - 1);
+                const pageIndices = effectivePages.map(p => p - 1);
                 const pages = await doc.copyPages(src, pageIndices);
                 pages.forEach(p => doc.addPage(p));
                 const bytes = await doc.save();
@@ -833,19 +900,45 @@ export default function UploadPage() {
                     const orderNum = record.uniquecode.split(".").pop() || "";
                     setUsedPages(prev => {
                         const next = new Map(prev);
-                        for (const p of match.pages.map(pg => pg - 1)) {
+                        for (const p of effectivePages.map(pg => pg - 1)) {
                             next.set(p, orderNum);
                         }
                         return next;
                     });
                 }
             } catch (err) {
-                console.error(`Failed to save ${match.uniquecode}:`, err);
+                console.error(`Failed to save ${item.uniquecode}:`, err);
             }
         }
 
         setSavingAllMatches(false);
-    }, [autoMatchResults, pdfArrayBuffer, records, fileStatuses]);
+    }, [pdfArrayBuffer, records, matchOverrides, selectedRecord, autoMatchResults, getMatchForRecord, selectedPages]);
+
+    // Save all matched records
+    const handleSaveAllMatches = useCallback(async () => {
+        if (!autoMatchResults || !records) return;
+        const items = autoMatchResults.matches.filter(m => {
+            if (m.confidence === "unmatched") return false;
+            const effectivePages = matchOverrides.get(m.uniquecode) || m.pages;
+            if (effectivePages.length === 0) return false;
+            const record = records.find(r => r.uniquecode === m.uniquecode);
+            return record ? fileStatuses[record.doc] !== true : false;
+        });
+        await saveMatches(items);
+    }, [autoMatchResults, records, fileStatuses, matchOverrides, saveMatches]);
+
+    // Save only high confidence matches
+    const handleSaveHighConfidence = useCallback(async () => {
+        if (!autoMatchResults || !records) return;
+        const items = autoMatchResults.matches.filter(m => {
+            if (m.confidence !== "high") return false;
+            const effectivePages = matchOverrides.get(m.uniquecode) || m.pages;
+            if (effectivePages.length === 0) return false;
+            const record = records.find(r => r.uniquecode === m.uniquecode);
+            return record ? fileStatuses[record.doc] !== true : false;
+        });
+        await saveMatches(items);
+    }, [autoMatchResults, records, fileStatuses, matchOverrides, saveMatches]);
 
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -877,7 +970,16 @@ export default function UploadPage() {
     // Auto-match summary
     const matchedCount = autoMatchResults ? autoMatchResults.matches.filter(m => m.pages.length > 0).length : 0;
     const savableCount = autoMatchResults && records ? autoMatchResults.matches.filter(m => {
-        if (m.pages.length === 0 || m.confidence === "unmatched") return false;
+        if (m.confidence === "unmatched") return false;
+        const ep = matchOverrides.get(m.uniquecode) || m.pages;
+        if (ep.length === 0) return false;
+        const record = records.find(r => r.uniquecode === m.uniquecode);
+        return record ? fileStatuses[record.doc] !== true : false;
+    }).length : 0;
+    const highSavableCount = autoMatchResults && records ? autoMatchResults.matches.filter(m => {
+        if (m.confidence !== "high") return false;
+        const ep = matchOverrides.get(m.uniquecode) || m.pages;
+        if (ep.length === 0) return false;
         const record = records.find(r => r.uniquecode === m.uniquecode);
         return record ? fileStatuses[record.doc] !== true : false;
     }).length : 0;
@@ -1010,12 +1112,12 @@ export default function UploadPage() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                {savableCount > 0 && (
+                                {highSavableCount > 0 && (
                                     <Button
-                                        onClick={handleSaveAllMatches}
+                                        onClick={handleSaveHighConfidence}
                                         disabled={savingAllMatches}
                                         size="sm"
-                                        className="h-8 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white"
+                                        className="h-8 gap-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
                                     >
                                         {savingAllMatches ? (
                                             <>
@@ -1023,6 +1125,22 @@ export default function UploadPage() {
                                                 {t.savingMatches} ({saveAllProgress.current}/{saveAllProgress.total})
                                             </>
                                         ) : (
+                                            <>
+                                                <Save className="h-3.5 w-3.5" />
+                                                {t.saveHighOnly} ({highSavableCount})
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                                {savableCount > 0 && (
+                                    <Button
+                                        onClick={handleSaveAllMatches}
+                                        disabled={savingAllMatches}
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 gap-1.5 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400"
+                                    >
+                                        {!savingAllMatches && (
                                             <>
                                                 <Save className="h-3.5 w-3.5" />
                                                 {t.saveAllMatches} ({savableCount})
@@ -1144,22 +1262,7 @@ export default function UploadPage() {
                                     return (
                                         <div
                                             key={record.uniquecode}
-                                            onClick={() => {
-                                                setSelectedRecord(record);
-                                                if (match && match.pages.length > 0) {
-                                                    const sorted = [...match.pages].sort((a, b) => a - b);
-                                                    const ranges: string[] = [];
-                                                    let j = 0;
-                                                    while (j < sorted.length) {
-                                                        const start = sorted[j];
-                                                        let end = start;
-                                                        while (j + 1 < sorted.length && sorted[j + 1] === end + 1) { end = sorted[++j]; }
-                                                        ranges.push(start === end ? String(start) : `${start}-${end}`);
-                                                        j++;
-                                                    }
-                                                    setPageRangeInput(ranges.join(", "));
-                                                }
-                                            }}
+                                            onClick={() => handleRecordSelect(record)}
                                             className={cn(
                                                 "rounded-lg border px-3 py-2 cursor-pointer transition-all duration-150 hover:shadow-md",
                                                 isSelected
@@ -1211,23 +1314,29 @@ export default function UploadPage() {
                                                     )}
                                                 </div>
                                                 {/* Auto-match badge */}
-                                                {match && (
-                                                    <div className="shrink-0">
-                                                        {match.confidence === "unmatched" ? (
-                                                            <Badge variant="outline" className="text-[9px] px-1 py-0 text-zinc-400 border-zinc-300 dark:border-zinc-700">
-                                                                {t.matchUnmatched}
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline" className={cn("text-[9px] px-1 py-0", {
-                                                                "text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-700": match.confidence === "high",
-                                                                "text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700": match.confidence === "medium",
-                                                                "text-rose-600 border-rose-300 dark:text-rose-400 dark:border-rose-700": match.confidence === "low",
-                                                            })}>
-                                                                p.{match.pages.join(",")} {match.confidence === "high" ? t.matchHigh : match.confidence === "medium" ? t.matchMedium : t.matchLow}
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                {match && (() => {
+                                                    const override = matchOverrides.get(record.uniquecode);
+                                                    const effectivePages = override || match.pages;
+                                                    const isEdited = !!override && JSON.stringify(override) !== JSON.stringify(match.pages);
+                                                    return (
+                                                        <div className="shrink-0" title={match.reason || ""}>
+                                                            {match.confidence === "unmatched" && !override ? (
+                                                                <Badge variant="outline" className="text-[9px] px-1 py-0 text-zinc-400 border-zinc-300 dark:border-zinc-700">
+                                                                    {t.matchUnmatched}
+                                                                </Badge>
+                                                            ) : effectivePages.length > 0 ? (
+                                                                <Badge variant="outline" className={cn("text-[9px] px-1 py-0", {
+                                                                    "text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-700": match.confidence === "high" && !isEdited,
+                                                                    "text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700": match.confidence === "medium" && !isEdited,
+                                                                    "text-rose-600 border-rose-300 dark:text-rose-400 dark:border-rose-700": match.confidence === "low" && !isEdited,
+                                                                    "text-blue-600 border-blue-300 dark:text-blue-400 dark:border-blue-700": isEdited,
+                                                                })}>
+                                                                    p.{effectivePages.join(",")} {isEdited ? t.edited : match.confidence === "high" ? t.matchHigh : match.confidence === "medium" ? t.matchMedium : t.matchLow}
+                                                                </Badge>
+                                                            ) : null}
+                                                        </div>
+                                                    );
+                                                })()}
                                                 {/* View details button */}
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setViewDetailRecord(record); }}
@@ -1298,6 +1407,21 @@ export default function UploadPage() {
                                                 <Trash2 className="h-4 w-4" />
                                             </button>
                                         </div>
+                                    ) : !pdfFile && pdfArrayBuffer && totalPages > 0 ? (
+                                        <div className="flex items-center gap-3">
+                                            <Wand2 className="h-5 w-5 text-violet-500 shrink-0" />
+                                            <div className="flex-1 min-w-0 text-left">
+                                                <p className="text-sm font-medium">SharePoint PDF</p>
+                                                <p className="text-xs text-zinc-500">{totalPages} {t.pages}</p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); clearPdf(); }}
+                                                className="shrink-0 p-1 rounded hover:bg-rose-100 dark:hover:bg-rose-900/30 text-zinc-400 hover:text-rose-500 transition-colors"
+                                                title={t.clearPdf}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     ) : (
                                         <div className="space-y-2">
                                             <Upload className="h-8 w-8 mx-auto text-zinc-400" />
@@ -1337,6 +1461,31 @@ export default function UploadPage() {
                                                 <span className="text-xs font-medium">{t.alreadyUploaded}</span>
                                             </div>
                                         )}
+                                        {/* Matched page thumbnails preview */}
+                                        {(() => {
+                                            const ep = getEffectivePages(selectedRecord.uniquecode);
+                                            if (ep.length === 0 || pageThumbnails.length === 0) return null;
+                                            return (
+                                                <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                                                    <p className="text-[10px] font-medium text-violet-600 dark:text-violet-400 mb-1.5">{t.matchedPages}</p>
+                                                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                                        {ep.map(pageNum => {
+                                                            const idx = pageNum - 1;
+                                                            return pageThumbnails[idx] ? (
+                                                                <div
+                                                                    key={idx}
+                                                                    className="shrink-0 w-14 rounded border border-violet-300 dark:border-violet-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400 transition-all"
+                                                                    onClick={() => openPagePreview(idx)}
+                                                                >
+                                                                    <img src={pageThumbnails[idx]} alt={`p.${pageNum}`} className="w-full h-auto" draggable={false} />
+                                                                    <div className="text-[8px] text-center font-bold bg-violet-500 text-white py-0.5">{pageNum}</div>
+                                                                </div>
+                                                            ) : null;
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 ) : (
                                     <div className="rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 p-4 text-center">
@@ -1498,6 +1647,38 @@ export default function UploadPage() {
                                         {Math.abs(Number(viewDetailRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {viewDetailRecord.parabirimi || ""}
                                     </span>
                                 </div>
+                                {/* Auto-match info */}
+                                {(() => {
+                                    const m = viewDetailRecord ? getMatchForRecord(viewDetailRecord.uniquecode) : null;
+                                    if (!m) return null;
+                                    return (
+                                        <div className={cn("pt-2 border-t rounded-lg p-2.5", {
+                                            "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20": m.confidence === "high",
+                                            "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20": m.confidence === "medium",
+                                            "border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/20": m.confidence === "low",
+                                            "border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50": m.confidence === "unmatched",
+                                        })}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Wand2 className="h-3.5 w-3.5 text-violet-500" />
+                                                <span className="text-xs font-semibold">Auto-Match</span>
+                                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", {
+                                                    "text-emerald-600 border-emerald-300": m.confidence === "high",
+                                                    "text-amber-600 border-amber-300": m.confidence === "medium",
+                                                    "text-rose-600 border-rose-300": m.confidence === "low",
+                                                    "text-zinc-400 border-zinc-300": m.confidence === "unmatched",
+                                                })}>
+                                                    {m.confidence === "high" ? t.matchHigh : m.confidence === "medium" ? t.matchMedium : m.confidence === "low" ? t.matchLow : t.matchUnmatched}
+                                                </Badge>
+                                                {m.pages.length > 0 && (
+                                                    <span className="text-xs text-zinc-500">
+                                                        {lang === "en" ? "Pages" : "Sayfalar"}: {m.pages.join(", ")}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-zinc-600 dark:text-zinc-400">{m.reason}</p>
+                                        </div>
+                                    );
+                                })()}
                                 <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
                                     <p className="text-xs text-zinc-400 truncate flex-1">Doc: {viewDetailRecord.doc}</p>
                                     {fileStatuses[viewDetailRecord.doc] === true && fileMetadata[viewDetailRecord.doc]?.id && (
