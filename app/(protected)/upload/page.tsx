@@ -37,6 +37,8 @@ import {
     ExternalLink,
     Wand2,
     Save,
+    CalendarDays,
+    Square,
 } from "lucide-react";
 
 interface DocumentRecord {
@@ -103,6 +105,33 @@ interface AutoMatchResult {
     ocrDurationMs: number;
     deepseekDurationMs: number;
     totalDurationMs: number;
+}
+
+interface MonthlyMatchDayResult {
+    matches: AutoMatchEntry[];
+    model: string;
+    fallbackUsed: boolean;
+    ocrCost: number;
+    deepseekCost: number;
+    reasoning: string | null;
+}
+
+interface MonthlyMatchData {
+    year: number;
+    month: number;
+    startedAt: string;
+    completedAt: string | null;
+    dayResults: Record<number, MonthlyMatchDayResult>;
+    errors: { day: number; phase: string; error: string }[];
+    totalOcrCost: number;
+    totalDeepseekCost: number;
+    totalOcrPages: number;
+}
+
+interface MonthlyLogEntry {
+    time: string;
+    message: string;
+    type: "info" | "error" | "success" | "warn";
 }
 
 const translations = {
@@ -181,6 +210,22 @@ const translations = {
         aiCost: "AI Cost",
         duration: "Duration",
         months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+        autoMatchMonth: "Auto-Match Month",
+        autoMatchMonthCancel: "Cancel",
+        autoMatchMonthProgress: "Monthly Auto-Match Progress",
+        showStoredMatches: "Show Matched Records",
+        noStoredMatchesDay: "No stored match results for this day",
+        monthlyPhaseInit: "Initializing...",
+        monthlyPhaseChecking: "Checking SharePoint...",
+        monthlyPhaseOcr: "OCR Processing",
+        monthlyPhaseDeepseek: "AI Matching",
+        monthlyPhaseDone: "Complete",
+        monthlyPhaseCancelled: "Cancelled",
+        monthlyErrors: "errors",
+        monthlyTotalCost: "Total Cost",
+        monthlyOcrPages: "Pages OCR'd",
+        monthlyDaysProcessed: "Days Processed",
+        monthlyRecordsMatched: "Records Matched",
     },
     tr: {
         title: "Belge Yukle",
@@ -257,12 +302,33 @@ const translations = {
         aiCost: "AI Maliyet",
         duration: "Sure",
         months: ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"],
+        autoMatchMonth: "Aylik Eslestir",
+        autoMatchMonthCancel: "Iptal",
+        autoMatchMonthProgress: "Aylik Otomatik Eslestirme",
+        showStoredMatches: "Kayitli Eslesmeleri Goster",
+        noStoredMatchesDay: "Bu gun icin kayitli eslestirme sonucu yok",
+        monthlyPhaseInit: "Baslatiliyor...",
+        monthlyPhaseChecking: "SharePoint kontrol ediliyor...",
+        monthlyPhaseOcr: "OCR Isleniyor",
+        monthlyPhaseDeepseek: "AI Eslestiriyor",
+        monthlyPhaseDone: "Tamamlandi",
+        monthlyPhaseCancelled: "Iptal Edildi",
+        monthlyErrors: "hata",
+        monthlyTotalCost: "Toplam Maliyet",
+        monthlyOcrPages: "OCR Sayfa",
+        monthlyDaysProcessed: "Islenen Gun",
+        monthlyRecordsMatched: "Eslesen Kayit",
     },
 } as const;
 
 type Lang = keyof typeof translations;
 
 const BATCH_SIZE = 10000;
+
+const MONTHLY_MATCH_KEY = (year: string, month: string) =>
+    `monthlyAutoMatch_${year}_${String(parseInt(month)).padStart(2, "0")}`;
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function getDaysInMonth(year: number, month: number): number {
     return new Date(year, month, 0).getDate();
@@ -383,6 +449,26 @@ export default function UploadPage() {
     const [autoMatchDebugOpen, setAutoMatchDebugOpen] = useState(false);
     const [matchOverrides, setMatchOverrides] = useState<Map<string, number[]>>(new Map());
 
+    // Monthly auto-match state
+    const [monthlyAutoMatching, setMonthlyAutoMatching] = useState(false);
+    const [monthlyProgress, setMonthlyProgress] = useState<{
+        phase: "init" | "checking" | "ocr" | "deepseek" | "done" | "cancelled";
+        totalDays: number;
+        ocrCompleted: number;
+        ocrErrors: number;
+        deepseekCompleted: number;
+        deepseekErrors: number;
+        logs: MonthlyLogEntry[];
+        calYear: number;
+        calMonth: number;
+        dayStatuses: Record<number, "no-records" | "no-missing" | "queued" | "ocr" | "ocr-retry" | "ocr-done" | "no-pdf" | "deepseek" | "done" | "error">;
+        missingCounts: Record<number, number>; // day → count of missing BAG records
+    } | null>(null);
+    const monthlyAbortRef = useRef(false);
+    const monthlyLogsRef = useRef<MonthlyLogEntry[]>([]);
+    const [hasStoredMonthlyData, setHasStoredMonthlyData] = useState(false);
+    const monthlyLogRef = useRef<HTMLDivElement>(null);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Days in selected month
@@ -392,6 +478,38 @@ export default function UploadPage() {
     useEffect(() => {
         if (parseInt(day) > daysInMonth) setDay("1");
     }, [daysInMonth, day]);
+
+    // Check localStorage for stored monthly match data
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem(MONTHLY_MATCH_KEY(year, month));
+            if (stored) {
+                const data: MonthlyMatchData = JSON.parse(stored);
+                setHasStoredMonthlyData(!!data.dayResults?.[parseInt(day)]);
+            } else {
+                setHasStoredMonthlyData(false);
+            }
+        } catch {
+            setHasStoredMonthlyData(false);
+        }
+    }, [year, month, day]);
+
+    // Auto-scroll monthly log panel
+    useEffect(() => {
+        if (monthlyLogRef.current) {
+            monthlyLogRef.current.scrollTop = monthlyLogRef.current.scrollHeight;
+        }
+    }, [monthlyProgress?.logs.length]);
+
+    // Warn user before closing tab during monthly auto-match
+    useEffect(() => {
+        if (!monthlyAutoMatching) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [monthlyAutoMatching]);
 
     // Parse page range on input change
     useEffect(() => {
@@ -940,6 +1058,379 @@ export default function UploadPage() {
         await saveMatches(items);
     }, [autoMatchResults, records, fileStatuses, matchOverrides, saveMatches]);
 
+    // Monthly auto-match: process entire month
+    const handleAutoMatchMonth = useCallback(async () => {
+        const y = parseInt(year);
+        const m = parseInt(month);
+        monthlyAbortRef.current = false;
+        monthlyLogsRef.current = [];
+
+        setMonthlyAutoMatching(true);
+        setMonthlyProgress({
+            phase: "init", totalDays: 0,
+            ocrCompleted: 0, ocrErrors: 0,
+            deepseekCompleted: 0, deepseekErrors: 0,
+            logs: [],
+            calYear: y, calMonth: m,
+            dayStatuses: {}, missingCounts: {},
+        });
+
+        const addLog = (type: MonthlyLogEntry["type"], message: string) => {
+            const entry: MonthlyLogEntry = { time: new Date().toLocaleTimeString(), message, type };
+            monthlyLogsRef.current = [...monthlyLogsRef.current, entry];
+            setMonthlyProgress(prev => prev ? { ...prev, logs: monthlyLogsRef.current } : null);
+        };
+
+        try {
+            // Step 1: Fetch all month records
+            addLog("info", `Fetching records for ${y}-${String(m).padStart(2, "0")}...`);
+            const resp = await fetch(`/api/documents?year=${y}&month=${m}`);
+            if (!resp.ok) throw new Error("Failed to fetch documents");
+            const allRecords: DocumentRecord[] = await resp.json();
+            addLog("info", `Found ${allRecords.length} total records for the month`);
+            if (monthlyAbortRef.current) { addLog("warn", "Cancelled"); return; }
+
+            // Step 2: SharePoint check
+            addLog("info", "Checking SharePoint for existing documents...");
+            setMonthlyProgress(prev => prev ? { ...prev, phase: "checking" } : null);
+
+            const docUrls = allRecords.map(r => r.doc);
+            const allCheckResults: Record<string, boolean> = {};
+            const totalBatches = Math.ceil(docUrls.length / BATCH_SIZE);
+
+            for (let i = 0; i < docUrls.length; i += BATCH_SIZE) {
+                const batch = docUrls.slice(i, i + BATCH_SIZE);
+                const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+                if (totalBatches > 1) addLog("info", `SP check batch ${batchNum}/${totalBatches}...`);
+
+                try {
+                    const checkResp = await fetch("/api/documents/check", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ docUrls: batch }),
+                    });
+                    if (checkResp.ok) {
+                        const { results } = await checkResp.json();
+                        Object.assign(allCheckResults, results);
+                    } else {
+                        addLog("error", `SP check batch ${batchNum} failed (${checkResp.status})`);
+                    }
+                } catch (err) {
+                    addLog("error", `SP check batch ${batchNum} error: ${(err as Error).message}`);
+                }
+                if (monthlyAbortRef.current) { addLog("warn", "Cancelled"); return; }
+            }
+
+            const totalMissing = Object.values(allCheckResults).filter(v => !v).length;
+            addLog("info", `SP check done: ${Object.keys(allCheckResults).length} checked, ${totalMissing} missing`);
+
+            // Step 3: Filter BAG records with missing docs, group by day
+            const allDayMap = new Map<number, DocumentRecord[]>();
+            for (const r of allRecords) {
+                const d = new Date(r.date).getDate();
+                if (!allDayMap.has(d)) allDayMap.set(d, []);
+                allDayMap.get(d)!.push(r);
+            }
+
+            const daysWithMissingBag = new Set<number>();
+            const missingCountPerDay: Record<number, number> = {};
+            for (const r of allRecords) {
+                if (r.source === "BAG" && allCheckResults[r.doc] === false) {
+                    const d = new Date(r.date).getDate();
+                    daysWithMissingBag.add(d);
+                    missingCountPerDay[d] = (missingCountPerDay[d] || 0) + 1;
+                }
+            }
+
+            const daysToProcess = [...daysWithMissingBag].sort((a, b) => a - b);
+            const bagMissingCount = allRecords.filter(r => r.source === "BAG" && allCheckResults[r.doc] === false).length;
+            addLog("info", `BAG missing: ${bagMissingCount} records across ${daysToProcess.length} days (${daysToProcess.join(", ")})`);
+
+            // Build calendar day statuses
+            const totalDaysInMonth = getDaysInMonth(y, m);
+            const calStatuses: Record<number, "no-records" | "no-missing" | "queued" | "ocr" | "ocr-retry" | "ocr-done" | "no-pdf" | "deepseek" | "done" | "error"> = {};
+            for (let d = 1; d <= totalDaysInMonth; d++) {
+                if (!allDayMap.has(d)) {
+                    calStatuses[d] = "no-records";
+                } else if (!daysWithMissingBag.has(d)) {
+                    calStatuses[d] = "no-missing";
+                } else {
+                    calStatuses[d] = "queued";
+                }
+            }
+
+            setMonthlyProgress(prev => prev ? {
+                ...prev,
+                dayStatuses: calStatuses,
+                missingCounts: missingCountPerDay,
+            } : null);
+
+            if (daysToProcess.length === 0) {
+                addLog("success", "No days need processing — all BAG documents are uploaded!");
+                setMonthlyProgress(prev => prev ? { ...prev, phase: "done" } : null);
+                return;
+            }
+
+            setMonthlyProgress(prev => prev ? { ...prev, totalDays: daysToProcess.length, phase: "ocr" } : null);
+
+            // Step 4: OCR phase (sequential, 1s gap, retry 2x with 10s wait)
+            addLog("info", `Starting OCR phase (${daysToProcess.length} days, 1 req/sec)...`);
+            const ocrResults: Record<number, { ocrPages: { index: number; markdown: string }[]; totalPages: number; cost: { totalCost: number } }> = {};
+            const monthlyData: MonthlyMatchData = {
+                year: y, month: m,
+                startedAt: new Date().toISOString(),
+                completedAt: null,
+                dayResults: {},
+                errors: [],
+                totalOcrCost: 0, totalDeepseekCost: 0, totalOcrPages: 0,
+            };
+
+            for (let di = 0; di < daysToProcess.length; di++) {
+                const d = daysToProcess[di];
+                if (monthlyAbortRef.current) { addLog("warn", "Cancelled during OCR"); break; }
+
+                addLog("info", `OCR day ${d} (${di + 1}/${daysToProcess.length})...`);
+                let ocrSuccess = false;
+                const setDayStatus = (day: number, status: typeof calStatuses[number]) => {
+                    setMonthlyProgress(prev => prev ? { ...prev, dayStatuses: { ...prev.dayStatuses, [day]: status } } : null);
+                };
+
+                setDayStatus(d, "ocr");
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const ocrResp = await fetch("/api/auto-match/ocr", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ year: y, month: m, day: d }),
+                        });
+
+                        if (ocrResp.status === 404) {
+                            addLog("warn", `Day ${d}: PDF not found in SharePoint, skipping`);
+                            monthlyData.errors.push({ day: d, phase: "ocr", error: "PDF not found" });
+                            setDayStatus(d, "no-pdf");
+                            break;
+                        }
+
+                        if (!ocrResp.ok) {
+                            const err = await ocrResp.json();
+                            throw new Error(err.error || `OCR failed (${ocrResp.status})`);
+                        }
+
+                        const ocrData = await ocrResp.json();
+                        ocrResults[d] = ocrData;
+                        monthlyData.totalOcrCost += ocrData.cost?.totalCost || 0;
+                        monthlyData.totalOcrPages += ocrData.totalPages || 0;
+                        addLog("success", `Day ${d}: OCR done — ${ocrData.totalPages} pages ($${(ocrData.cost?.totalCost || 0).toFixed(3)})`);
+                        ocrSuccess = true;
+                        setDayStatus(d, "ocr-done");
+                        break;
+                    } catch (err) {
+                        addLog("error", `Day ${d}: OCR attempt ${attempt}/3 failed — ${(err as Error).message}`);
+                        if (attempt < 3) {
+                            setDayStatus(d, "ocr-retry");
+                            addLog("info", `Day ${d}: Retrying in 10s...`);
+                            await sleep(10000);
+                            setDayStatus(d, "ocr");
+                        } else {
+                            setDayStatus(d, "error");
+                            monthlyData.errors.push({ day: d, phase: "ocr", error: (err as Error).message });
+                        }
+                    }
+                }
+
+                setMonthlyProgress(prev => prev ? {
+                    ...prev,
+                    ocrCompleted: prev.ocrCompleted + (ocrSuccess ? 1 : 0),
+                    ocrErrors: prev.ocrErrors + (ocrSuccess ? 0 : 1),
+                } : null);
+
+                // 1s gap between Mistral calls (rate limit)
+                if (di < daysToProcess.length - 1) await sleep(1000);
+            }
+
+            if (monthlyAbortRef.current) {
+                addLog("warn", "Process cancelled during OCR phase");
+                setMonthlyProgress(prev => prev ? { ...prev, phase: "cancelled" } : null);
+                // Save partial data
+                localStorage.setItem(MONTHLY_MATCH_KEY(year, month), JSON.stringify(monthlyData));
+                return;
+            }
+
+            // Step 5: DeepSeek phase (all concurrent)
+            const daysWithOcr = Object.keys(ocrResults).map(Number);
+            if (daysWithOcr.length === 0) {
+                addLog("error", "No OCR results available. Cannot proceed to AI matching.");
+                setMonthlyProgress(prev => prev ? { ...prev, phase: "done" } : null);
+                localStorage.setItem(MONTHLY_MATCH_KEY(year, month), JSON.stringify(monthlyData));
+                return;
+            }
+
+            addLog("info", `Starting AI matching (${daysWithOcr.length} days, all concurrent)...`);
+            setMonthlyProgress(prev => prev ? { ...prev, phase: "deepseek" } : null);
+
+            // Helper to update a single day's calendar status
+            const setDayStatusDS = (dayNum: number, status: typeof calStatuses[number]) => {
+                setMonthlyProgress(prev => prev ? { ...prev, dayStatuses: { ...prev.dayStatuses, [dayNum]: status } } : null);
+            };
+
+            const deepseekPromises = daysWithOcr.map(async (d) => {
+                if (monthlyAbortRef.current) return;
+
+                setDayStatusDS(d, "deepseek");
+                try {
+                    const dayRecords = allDayMap.get(d) || [];
+                    addLog("info", `Day ${d}: Sending ${dayRecords.length} records + ${ocrResults[d].totalPages} pages to AI...`);
+
+                    const matchResp = await fetch("/api/auto-match/match", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            ocrPages: ocrResults[d].ocrPages,
+                            records: dayRecords.map(r => ({
+                                uniquecode: r.uniquecode,
+                                carifirma: r.carifirma,
+                                aciklama: r.aciklama,
+                                giris_tutar: r.giris_tutar,
+                                cikis_tutar: r.cikis_tutar,
+                                parabirimi: r.parabirimi,
+                                projekodu: r.projekodu,
+                                islemturu: r.islemturu,
+                            })),
+                        }),
+                    });
+
+                    if (!matchResp.ok) {
+                        const err = await matchResp.json();
+                        throw new Error(err.error || `DeepSeek failed (${matchResp.status})`);
+                    }
+
+                    const matchData = await matchResp.json();
+                    monthlyData.dayResults[d] = {
+                        matches: matchData.matches || [],
+                        model: matchData.model,
+                        fallbackUsed: matchData.fallbackUsed,
+                        ocrCost: ocrResults[d].cost?.totalCost || 0,
+                        deepseekCost: matchData.cost?.totalCost || 0,
+                        reasoning: matchData.reasoning,
+                    };
+                    monthlyData.totalDeepseekCost += matchData.cost?.totalCost || 0;
+
+                    // Save progressively
+                    localStorage.setItem(MONTHLY_MATCH_KEY(year, month), JSON.stringify(monthlyData));
+
+                    const matched = (matchData.matches || []).filter((mt: AutoMatchEntry) => mt.pages?.length > 0).length;
+                    addLog("success", `Day ${d}: AI done — ${matched}/${dayRecords.length} matched (${matchData.model}${matchData.fallbackUsed ? " fb" : ""}) $${(matchData.cost?.totalCost || 0).toFixed(4)}`);
+                    setDayStatusDS(d, "done");
+                    setMonthlyProgress(prev => prev ? { ...prev, deepseekCompleted: prev.deepseekCompleted + 1 } : null);
+                } catch (err) {
+                    monthlyData.errors.push({ day: d, phase: "deepseek", error: (err as Error).message });
+                    addLog("error", `Day ${d}: AI failed — ${(err as Error).message}`);
+                    setDayStatusDS(d, "error");
+                    setMonthlyProgress(prev => prev ? { ...prev, deepseekErrors: prev.deepseekErrors + 1 } : null);
+                }
+            });
+
+            await Promise.allSettled(deepseekPromises);
+
+            // Finalize
+            monthlyData.completedAt = new Date().toISOString();
+            localStorage.setItem(MONTHLY_MATCH_KEY(year, month), JSON.stringify(monthlyData));
+
+            const totalDayResults = Object.keys(monthlyData.dayResults).length;
+            const totalMatched = Object.values(monthlyData.dayResults)
+                .flatMap(dr => dr.matches)
+                .filter(mt => mt.pages.length > 0).length;
+
+            addLog("success", "Monthly auto-match complete!");
+            addLog("info", `${totalDayResults} days processed, ${totalMatched} records matched`);
+            addLog("info", `Cost: OCR $${monthlyData.totalOcrCost.toFixed(3)} + AI $${monthlyData.totalDeepseekCost.toFixed(4)} = $${(monthlyData.totalOcrCost + monthlyData.totalDeepseekCost).toFixed(4)}`);
+            addLog("info", `Pages OCR'd: ${monthlyData.totalOcrPages}`);
+            if (monthlyData.errors.length > 0) {
+                addLog("warn", `${monthlyData.errors.length} errors occurred (see log)`);
+            }
+
+            setMonthlyProgress(prev => prev ? { ...prev, phase: "done" } : null);
+            setHasStoredMonthlyData(true);
+        } catch (err) {
+            addLog("error", `Fatal error: ${(err as Error).message}`);
+            setMonthlyProgress(prev => prev ? { ...prev, phase: "done" } : null);
+        } finally {
+            setMonthlyAutoMatching(false);
+        }
+    }, [year, month]);
+
+    // Show stored monthly match results for current day
+    const handleShowMonthlyMatches = useCallback(async () => {
+        try {
+            const stored = localStorage.getItem(MONTHLY_MATCH_KEY(year, month));
+            if (!stored) {
+                setAutoMatchError(t.noStoredMatchesDay);
+                return;
+            }
+            const data: MonthlyMatchData = JSON.parse(stored);
+            const dayResult = data.dayResults[parseInt(day)];
+            if (!dayResult) {
+                setAutoMatchError(t.noStoredMatchesDay);
+                return;
+            }
+
+            setAutoMatchResults({
+                matches: dayResult.matches,
+                reasoning: dayResult.reasoning,
+                model: dayResult.model,
+                fallbackUsed: dayResult.fallbackUsed,
+                ocrCost: { pages: 0, totalCost: dayResult.ocrCost },
+                deepseekCost: { totalCost: dayResult.deepseekCost },
+                totalCost: dayResult.ocrCost + dayResult.deepseekCost,
+                ocrDurationMs: 0,
+                deepseekDurationMs: 0,
+                totalDurationMs: 0,
+            });
+            setAutoMatchError(null);
+            setMatchOverrides(new Map());
+
+            // Also load the PDF from SharePoint for thumbnails + save capability
+            if (!pdfArrayBuffer) {
+                try {
+                    const pdfResp = await fetch(`/api/auto-match/pdf?year=${year}&month=${month}&day=${day}`);
+                    if (pdfResp.ok) {
+                        const buffer = await pdfResp.arrayBuffer();
+                        setPdfArrayBuffer(buffer);
+                        setPdfFile(null);
+                        setPageRangeInput("");
+                        setSelectedPages([]);
+                        setRenderingThumbnails(true);
+
+                        const pdfjsLib = await import("pdfjs-dist");
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+                        const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+                        const count = pdfDoc.numPages;
+                        setTotalPages(count);
+
+                        const thumbs: string[] = [];
+                        for (let i = 1; i <= count; i++) {
+                            const page = await pdfDoc.getPage(i);
+                            const viewport = page.getViewport({ scale: 0.4 });
+                            const canvas = document.createElement("canvas");
+                            canvas.width = viewport.width;
+                            canvas.height = viewport.height;
+                            const ctx = canvas.getContext("2d")!;
+                            await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+                            thumbs.push(canvas.toDataURL("image/jpeg", 0.7));
+                        }
+                        setPageThumbnails(thumbs);
+                        setRenderingThumbnails(false);
+                    }
+                } catch (pdfErr) {
+                    console.error("PDF load for thumbnails failed:", pdfErr);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load monthly match data:", err);
+            setAutoMatchError(t.noStoredMatchesDay);
+        }
+    }, [year, month, day, t.noStoredMatchesDay, pdfArrayBuffer]);
+
     // Drop handlers
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -1042,7 +1533,7 @@ export default function UploadPage() {
                     {records && records.length > 0 && !isLoading && (
                         <Button
                             onClick={handleAutoMatch}
-                            disabled={autoMatching || savingAllMatches}
+                            disabled={autoMatching || savingAllMatches || monthlyAutoMatching}
                             variant="outline"
                             className="h-9 gap-2 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/20"
                         >
@@ -1055,6 +1546,38 @@ export default function UploadPage() {
                                 ? (autoMatchStep === "ocr" ? t.autoMatchOcr : t.autoMatchAi)
                                 : t.autoMatch
                             }
+                        </Button>
+                    )}
+
+                    {/* Auto-Match Month button */}
+                    {!isLoading && (
+                        <Button
+                            onClick={monthlyAutoMatching ? () => { monthlyAbortRef.current = true; } : handleAutoMatchMonth}
+                            disabled={autoMatching || savingAllMatches}
+                            variant="outline"
+                            className={cn("h-9 gap-2", monthlyAutoMatching
+                                ? "border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                                : "border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20"
+                            )}
+                        >
+                            {monthlyAutoMatching ? (
+                                <Square className="h-4 w-4" />
+                            ) : (
+                                <CalendarDays className="h-4 w-4" />
+                            )}
+                            {monthlyAutoMatching ? t.autoMatchMonthCancel : t.autoMatchMonth}
+                        </Button>
+                    )}
+
+                    {/* Show stored monthly matches */}
+                    {records && records.length > 0 && !isLoading && hasStoredMonthlyData && !autoMatchResults && (
+                        <Button
+                            onClick={handleShowMonthlyMatches}
+                            variant="outline"
+                            className="h-9 gap-2 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                        >
+                            <Wand2 className="h-4 w-4" />
+                            {t.showStoredMatches}
                         </Button>
                     )}
 
@@ -1083,6 +1606,175 @@ export default function UploadPage() {
                         <AlertTitle>{t.error}</AlertTitle>
                         <AlertDescription>{autoMatchError}</AlertDescription>
                     </Alert>
+                )}
+
+                {/* Monthly auto-match progress panel */}
+                {monthlyProgress && (
+                    <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/20 shadow-sm p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <CalendarDays className="h-4 w-4 text-teal-500" />
+                                <span className="text-sm font-semibold text-teal-700 dark:text-teal-300">{t.autoMatchMonthProgress}</span>
+                                {monthlyAutoMatching && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", {
+                                    "text-zinc-500 border-zinc-300": monthlyProgress.phase === "init",
+                                    "text-blue-600 border-blue-300": monthlyProgress.phase === "checking",
+                                    "text-amber-600 border-amber-300": monthlyProgress.phase === "ocr",
+                                    "text-violet-600 border-violet-300": monthlyProgress.phase === "deepseek",
+                                    "text-emerald-600 border-emerald-300": monthlyProgress.phase === "done",
+                                    "text-rose-600 border-rose-300": monthlyProgress.phase === "cancelled",
+                                })}>
+                                    {monthlyProgress.phase === "init" ? t.monthlyPhaseInit
+                                        : monthlyProgress.phase === "checking" ? t.monthlyPhaseChecking
+                                        : monthlyProgress.phase === "ocr" ? `${t.monthlyPhaseOcr} (${monthlyProgress.ocrCompleted}/${monthlyProgress.totalDays})`
+                                        : monthlyProgress.phase === "deepseek" ? `${t.monthlyPhaseDeepseek} (${monthlyProgress.deepseekCompleted}/${monthlyProgress.totalDays - monthlyProgress.ocrErrors})`
+                                        : monthlyProgress.phase === "done" ? t.monthlyPhaseDone
+                                        : t.monthlyPhaseCancelled}
+                                </Badge>
+                                {!monthlyAutoMatching && (
+                                    <button
+                                        onClick={() => setMonthlyProgress(null)}
+                                        className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline"
+                                    >
+                                        {t.close}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Calendar grid */}
+                        {Object.keys(monthlyProgress.dayStatuses).length > 0 && (() => {
+                            const y = monthlyProgress.calYear;
+                            const m = monthlyProgress.calMonth;
+                            const totalDaysInCal = getDaysInMonth(y, m);
+                            // 0=Sun,1=Mon...6=Sat → shift to Mon=0
+                            const firstDow = new Date(y, m - 1, 1).getDay();
+                            const startOffset = firstDow === 0 ? 6 : firstDow - 1; // Mon-based offset
+                            const dayNames = lang === "en"
+                                ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+                                : ["Pt", "Sa", "Ca", "Pe", "Cu", "Ct", "Pa"];
+
+                            return (
+                                <div>
+                                    {/* Day name headers */}
+                                    <div className="grid grid-cols-7 gap-1 mb-1">
+                                        {dayNames.map(dn => (
+                                            <div key={dn} className="text-[9px] text-center text-zinc-400 font-medium">{dn}</div>
+                                        ))}
+                                    </div>
+                                    {/* Day cells */}
+                                    <div className="grid grid-cols-7 gap-1">
+                                        {/* Empty offset cells */}
+                                        {Array.from({ length: startOffset }).map((_, i) => (
+                                            <div key={`empty-${i}`} className="h-9" />
+                                        ))}
+                                        {Array.from({ length: totalDaysInCal }, (_, i) => {
+                                            const d = i + 1;
+                                            const status = monthlyProgress.dayStatuses[d];
+                                            const missingCount = monthlyProgress.missingCounts[d] || 0;
+                                            const isAnimating = status === "ocr" || status === "deepseek";
+                                            const isRetrying = status === "ocr-retry";
+
+                                            let bg = "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-300 dark:text-zinc-600"; // no-records
+                                            let ring = "";
+                                            if (status === "no-missing") bg = "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400";
+                                            else if (status === "queued") bg = "bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300";
+                                            else if (status === "ocr" || status === "ocr-retry") { bg = "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"; ring = "ring-2 ring-amber-400"; }
+                                            else if (status === "ocr-done") bg = "bg-amber-200 dark:bg-amber-800/40 text-amber-700 dark:text-amber-300";
+                                            else if (status === "no-pdf") bg = "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400";
+                                            else if (status === "deepseek") { bg = "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"; ring = "ring-2 ring-violet-400"; }
+                                            else if (status === "done") bg = "bg-emerald-200 dark:bg-emerald-800/50 text-emerald-700 dark:text-emerald-300";
+                                            else if (status === "error") bg = "bg-rose-200 dark:bg-rose-800/50 text-rose-700 dark:text-rose-300";
+
+                                            const statusLabel = status === "no-records" ? "-"
+                                                : status === "no-missing" ? "✓"
+                                                : status === "queued" ? "…"
+                                                : status === "ocr" ? "OCR"
+                                                : status === "ocr-retry" ? "⟳"
+                                                : status === "ocr-done" ? "✓O"
+                                                : status === "no-pdf" ? "!P"
+                                                : status === "deepseek" ? "AI"
+                                                : status === "done" ? "✓"
+                                                : status === "error" ? "✗"
+                                                : "";
+
+                                            return (
+                                                <div
+                                                    key={d}
+                                                    className={cn(
+                                                        "h-9 rounded-md flex flex-col items-center justify-center relative transition-all",
+                                                        bg, ring,
+                                                        isAnimating && "animate-pulse",
+                                                        isRetrying && "animate-pulse [animation-duration:2s]",
+                                                    )}
+                                                    title={`Day ${d}: ${status}${missingCount > 0 ? ` (${missingCount} missing)` : ""}`}
+                                                >
+                                                    <span className="text-[11px] font-bold leading-none">{d}</span>
+                                                    <span className="text-[8px] leading-none mt-0.5 font-medium">{statusLabel}</span>
+                                                    {missingCount > 0 && status !== "no-missing" && status !== "no-records" && (
+                                                        <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[7px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                                                            {missingCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Progress bars */}
+                        {monthlyProgress.totalDays > 0 && (
+                            <div className="space-y-1.5">
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-zinc-500 w-12">OCR</span>
+                                    <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-amber-500 transition-all duration-300 rounded-full"
+                                            style={{ width: `${((monthlyProgress.ocrCompleted + monthlyProgress.ocrErrors) / monthlyProgress.totalDays) * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-zinc-500 tabular-nums w-16 text-right">
+                                        {monthlyProgress.ocrCompleted}/{monthlyProgress.totalDays}
+                                        {monthlyProgress.ocrErrors > 0 && <span className="text-rose-500"> ({monthlyProgress.ocrErrors} err)</span>}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-zinc-500 w-12">AI</span>
+                                    <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-violet-500 transition-all duration-300 rounded-full"
+                                            style={{ width: `${monthlyProgress.ocrCompleted > 0 ? ((monthlyProgress.deepseekCompleted + monthlyProgress.deepseekErrors) / (monthlyProgress.totalDays - monthlyProgress.ocrErrors || 1)) * 100 : 0}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-zinc-500 tabular-nums w-16 text-right">
+                                        {monthlyProgress.deepseekCompleted}/{monthlyProgress.totalDays - monthlyProgress.ocrErrors}
+                                        {monthlyProgress.deepseekErrors > 0 && <span className="text-rose-500"> ({monthlyProgress.deepseekErrors} err)</span>}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Log panel */}
+                        <div ref={monthlyLogRef} className="max-h-48 overflow-y-auto space-y-0.5 text-[11px] font-mono bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-2">
+                            {monthlyProgress.logs.length === 0 ? (
+                                <p className="text-zinc-400 text-center py-2">{t.monthlyPhaseInit}</p>
+                            ) : monthlyProgress.logs.map((log, i) => (
+                                <div key={i} className={cn("flex gap-2", {
+                                    "text-zinc-500": log.type === "info",
+                                    "text-rose-600 dark:text-rose-400": log.type === "error",
+                                    "text-emerald-600 dark:text-emerald-400": log.type === "success",
+                                    "text-amber-600 dark:text-amber-400": log.type === "warn",
+                                })}>
+                                    <span className="text-zinc-400 shrink-0">{log.time}</span>
+                                    <span>{log.message}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 )}
 
                 {/* Auto-match results summary */}
