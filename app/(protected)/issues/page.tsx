@@ -1621,7 +1621,7 @@ export default function IssuesPage() {
 
                 {/* Upload Dialog */}
                 <Dialog open={!!uploadRecord} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-                    <DialogContent className="sm:max-w-2xl">
+                    <DialogContent className={previewUrl ? "sm:max-w-5xl" : "sm:max-w-2xl"}>
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                                 <FileText className="h-5 w-5 text-indigo-500" />
@@ -1633,122 +1633,125 @@ export default function IssuesPage() {
                         </DialogHeader>
 
                         {uploadRecord && (
-                            <div className="space-y-4">
-                                {/* Record details */}
-                                <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.vendorLabel}</span>
-                                        <p className="font-medium truncate">{uploadRecord.carifirma}</p>
+                            <div className={previewUrl ? "flex gap-4" : "space-y-4"}>
+                                {/* Left side: record details + drop zone + result */}
+                                <div className={previewUrl ? "w-1/2 space-y-4" : "space-y-4 w-full"}>
+                                    {/* Record details */}
+                                    <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4">
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.vendorLabel}</span>
+                                            <p className="font-medium truncate">{uploadRecord.carifirma}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.amountLabel}</span>
+                                            <p className="font-medium">{formatCurrency(Number(uploadRecord.usd_degeri) || 0)}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.incoming}:</span>
+                                            <p className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+                                                {Math.abs(Number(uploadRecord.giris_tutar) || 0) > 0
+                                                    ? `${Math.abs(Number(uploadRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
+                                                    : "—"
+                                                }
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.outgoing}:</span>
+                                            <p className="font-medium tabular-nums text-rose-600 dark:text-rose-400">
+                                                {Math.abs(Number(uploadRecord.cikis_tutar) || 0) > 0
+                                                    ? `${Math.abs(Number(uploadRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
+                                                    : "—"
+                                                }
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.date}:</span>
+                                            <p className="font-medium">{formatDate(uploadRecord.date)}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.transType}:</span>
+                                            <p className="font-medium font-mono">{uploadRecord.islemturu || "—"}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.project}:</span>
+                                            <p className="font-medium">{uploadRecord.projekodu}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.source}:</span>
+                                            <p className="font-medium">{uploadRecord.source}{uploadRecord.partner ? ` / ${uploadRecord.partner}` : ""}</p>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.descriptionLabel}</span>
+                                            <p className="font-medium">{uploadRecord.aciklama}</p>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <span className="text-zinc-500 dark:text-zinc-400">{t.targetFilename}</span>
+                                            <p className="font-mono text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded mt-1">{getFilename(uploadRecord.doc)}</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.amountLabel}</span>
-                                        <p className="font-medium">{formatCurrency(Number(uploadRecord.usd_degeri) || 0)}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.incoming}:</span>
-                                        <p className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-                                            {Math.abs(Number(uploadRecord.giris_tutar) || 0) > 0
-                                                ? `${Math.abs(Number(uploadRecord.giris_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
-                                                : "—"
-                                            }
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.outgoing}:</span>
-                                        <p className="font-medium tabular-nums text-rose-600 dark:text-rose-400">
-                                            {Math.abs(Number(uploadRecord.cikis_tutar) || 0) > 0
-                                                ? `${Math.abs(Number(uploadRecord.cikis_tutar) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uploadRecord.parabirimi || ""}`
-                                                : "—"
-                                            }
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.date}:</span>
-                                        <p className="font-medium">{formatDate(uploadRecord.date)}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.transType}:</span>
-                                        <p className="font-medium font-mono">{uploadRecord.islemturu || "—"}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.project}:</span>
-                                        <p className="font-medium">{uploadRecord.projekodu}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.source}:</span>
-                                        <p className="font-medium">{uploadRecord.source}{uploadRecord.partner ? ` / ${uploadRecord.partner}` : ""}</p>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.descriptionLabel}</span>
-                                        <p className="font-medium">{uploadRecord.aciklama}</p>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="text-zinc-500 dark:text-zinc-400">{t.targetFilename}</span>
-                                        <p className="font-mono text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded mt-1">{getFilename(uploadRecord.doc)}</p>
-                                    </div>
-                                </div>
 
-                                {/* Drop zone */}
-                                <div
-                                    className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors"
-                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20"); }}
-                                    onDragLeave={(e) => { e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20"); }}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20");
-                                        const file = e.dataTransfer.files[0];
-                                        if (file && file.type === "application/pdf") handleFileSelect(file);
-                                    }}
-                                    onClick={() => {
-                                        const input = document.createElement("input");
-                                        input.type = "file";
-                                        input.accept = ".pdf";
-                                        input.onchange = (e) => {
-                                            const file = (e.target as HTMLInputElement).files?.[0];
-                                            if (file) handleFileSelect(file);
-                                        };
-                                        input.click();
-                                    }}
-                                >
-                                    {selectedFile ? (
-                                        <div className="space-y-1">
-                                            <FileText className="h-8 w-8 text-indigo-500 mx-auto" />
-                                            <p className="font-medium">{selectedFile.name}</p>
-                                            <p className="text-xs text-zinc-500">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <Upload className="h-8 w-8 text-zinc-400 mx-auto" />
-                                            <p className="text-zinc-500 dark:text-zinc-400">{t.dragDrop}</p>
-                                            <p className="text-xs text-zinc-400">{t.onlyPdf}</p>
-                                        </div>
+                                    {/* Drop zone */}
+                                    <div
+                                        className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors"
+                                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20"); }}
+                                        onDragLeave={(e) => { e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20"); }}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50", "dark:bg-indigo-950/20");
+                                            const file = e.dataTransfer.files[0];
+                                            if (file && file.type === "application/pdf") handleFileSelect(file);
+                                        }}
+                                        onClick={() => {
+                                            const input = document.createElement("input");
+                                            input.type = "file";
+                                            input.accept = ".pdf";
+                                            input.onchange = (e) => {
+                                                const file = (e.target as HTMLInputElement).files?.[0];
+                                                if (file) handleFileSelect(file);
+                                            };
+                                            input.click();
+                                        }}
+                                    >
+                                        {selectedFile ? (
+                                            <div className="space-y-1">
+                                                <FileText className="h-8 w-8 text-indigo-500 mx-auto" />
+                                                <p className="font-medium">{selectedFile.name}</p>
+                                                <p className="text-xs text-zinc-500">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <Upload className="h-8 w-8 text-zinc-400 mx-auto" />
+                                                <p className="text-zinc-500 dark:text-zinc-400">{t.dragDrop}</p>
+                                                <p className="text-xs text-zinc-400">{t.onlyPdf}</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Upload result */}
+                                    {uploadResult && (
+                                        <Alert variant={uploadResult.success ? "default" : "destructive"}>
+                                            {uploadResult.success ? (
+                                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                            ) : (
+                                                <AlertCircle className="h-4 w-4" />
+                                            )}
+                                            <AlertTitle>{uploadResult.success ? t.success : t.error}</AlertTitle>
+                                            <AlertDescription>{uploadResult.message}</AlertDescription>
+                                        </Alert>
                                     )}
                                 </div>
 
-                                {/* PDF Preview */}
+                                {/* Right side: PDF Preview */}
                                 {previewUrl && (
-                                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                                    <div className="w-1/2 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
                                         <object
                                             data={previewUrl}
                                             type="application/pdf"
-                                            className="w-full h-[300px]"
+                                            className="w-full h-full min-h-[400px]"
                                         >
                                             <p className="p-4 text-center text-zinc-500">{t.pdfNotAvailable}</p>
                                         </object>
                                     </div>
-                                )}
-
-                                {/* Upload result */}
-                                {uploadResult && (
-                                    <Alert variant={uploadResult.success ? "default" : "destructive"}>
-                                        {uploadResult.success ? (
-                                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                        ) : (
-                                            <AlertCircle className="h-4 w-4" />
-                                        )}
-                                        <AlertTitle>{uploadResult.success ? t.success : t.error}</AlertTitle>
-                                        <AlertDescription>{uploadResult.message}</AlertDescription>
-                                    </Alert>
                                 )}
                             </div>
                         )}

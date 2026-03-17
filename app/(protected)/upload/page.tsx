@@ -2301,7 +2301,7 @@ export default function UploadPage() {
                 )}
                 {/* Record Details Dialog */}
                 <Dialog open={!!viewDetailRecord} onOpenChange={(open) => { if (!open) setViewDetailRecord(null); }}>
-                    <DialogContent className="max-w-lg">
+                    <DialogContent className="max-w-2xl">
                         <DialogHeader>
                             <DialogTitle>{t.recordDetails}</DialogTitle>
                         </DialogHeader>
