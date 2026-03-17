@@ -1500,7 +1500,11 @@ export default function UploadPage() {
                 });
             }
         }
-        return result;
+        return result.slice().sort((a, b) => {
+            const aNum = parseInt(a.uniquecode.split(".").pop() || "0", 10);
+            const bNum = parseInt(b.uniquecode.split(".").pop() || "0", 10);
+            return aNum - bNum;
+        });
     }, [records, filterVendor, filterDesc, filterAmount]);
 
     const missingCount = records ? records.filter(r => fileStatuses[r.doc] === false).length : 0;
