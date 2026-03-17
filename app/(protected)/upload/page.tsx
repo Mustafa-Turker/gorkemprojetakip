@@ -1482,7 +1482,7 @@ export default function UploadPage() {
     // Filtered records for left panel
     const filteredRecords = useMemo(() => {
         if (!records) return [];
-        let result = records;
+        let result = records.filter(r => !r.uniquecode.startsWith("TR"));
         const vf = filterVendor.toLowerCase().trim();
         const df = filterDesc.toLowerCase().trim();
         const af = filterAmount.trim();
