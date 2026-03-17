@@ -422,7 +422,7 @@ export default function UploadPage() {
     const [selectedPages, setSelectedPages] = useState<number[]>([]);
     const [pageThumbnails, setPageThumbnails] = useState<string[]>([]);
     const [renderingThumbnails, setRenderingThumbnails] = useState(false);
-    const [usedPages, setUsedPages] = useState<Map<number, string>>(new Map()); // pageIdx → order number
+    const [usedPages, setUsedPages] = useState<Map<number, string[]>>(new Map()); // pageIdx → order numbers
 
     // Upload state
     const [uploading, setUploading] = useState(false);
@@ -712,7 +712,10 @@ export default function UploadPage() {
                 setUsedPages(prev => {
                     const next = new Map(prev);
                     for (const p of selectedPages) {
-                        next.set(p, orderNum);
+                        const existing = next.get(p) || [];
+                        if (!existing.includes(orderNum)) {
+                            next.set(p, [...existing, orderNum]);
+                        }
                     }
                     return next;
                 });
@@ -1019,7 +1022,10 @@ export default function UploadPage() {
                     setUsedPages(prev => {
                         const next = new Map(prev);
                         for (const p of effectivePages.map(pg => pg - 1)) {
-                            next.set(p, orderNum);
+                            const existing = next.get(p) || [];
+                            if (!existing.includes(orderNum)) {
+                                next.set(p, [...existing, orderNum]);
+                            }
                         }
                         return next;
                     });
@@ -2250,7 +2256,7 @@ export default function UploadPage() {
                                                             )}
                                                             {usedPages.has(idx) && (
                                                                 <div className="absolute top-0 left-0 right-0 bg-emerald-600/85 text-white text-[9px] font-bold text-center py-0.5 tracking-wide">
-                                                                    USED ({usedPages.get(idx)})
+                                                                    USED ({usedPages.get(idx)!.join(", ")})
                                                                 </div>
                                                             )}
                                                             {/* Full-page preview button */}
