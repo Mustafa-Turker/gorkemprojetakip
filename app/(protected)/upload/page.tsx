@@ -226,6 +226,9 @@ const translations = {
         monthlyOcrPages: "Pages OCR'd",
         monthlyDaysProcessed: "Days Processed",
         monthlyRecordsMatched: "Records Matched",
+        filterVendor: "Vendor",
+        filterDescription: "Description",
+        filterAmount: "Amount",
     },
     tr: {
         title: "Belge Yukle",
@@ -318,6 +321,9 @@ const translations = {
         monthlyOcrPages: "OCR Sayfa",
         monthlyDaysProcessed: "Islenen Gun",
         monthlyRecordsMatched: "Eslesen Kayit",
+        filterVendor: "Firma",
+        filterDescription: "Aciklama",
+        filterAmount: "Tutar",
     },
 } as const;
 
@@ -413,6 +419,11 @@ export default function UploadPage() {
 
     // Card selection
     const [selectedRecord, setSelectedRecord] = useState<DocumentRecord | null>(null);
+
+    // Record filters
+    const [filterVendor, setFilterVendor] = useState("");
+    const [filterDesc, setFilterDesc] = useState("");
+    const [filterAmount, setFilterAmount] = useState("");
 
     // PDF state
     const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -596,6 +607,9 @@ export default function UploadPage() {
         setAutoMatchResults(null);
         setAutoMatchError(null);
         setMatchOverrides(new Map());
+        setFilterVendor("");
+        setFilterDesc("");
+        setFilterAmount("");
 
         try {
             const url = `/api/documents?year=${year}&month=${month}&day=${day}`;
@@ -1465,6 +1479,30 @@ export default function UploadPage() {
     }, [handlePdfLoad]);
 
     // Summary counts
+    // Filtered records for left panel
+    const filteredRecords = useMemo(() => {
+        if (!records) return [];
+        let result = records;
+        const vf = filterVendor.toLowerCase().trim();
+        const df = filterDesc.toLowerCase().trim();
+        const af = filterAmount.trim();
+        if (vf) result = result.filter(r => (r.carifirma || "").toLowerCase().includes(vf));
+        if (df) result = result.filter(r => (r.aciklama || "").toLowerCase().includes(df));
+        if (af) {
+            const num = parseFloat(af);
+            if (!isNaN(num)) {
+                result = result.filter(r => {
+                    const giris = Math.abs(Number(r.giris_tutar) || 0);
+                    const cikis = Math.abs(Number(r.cikis_tutar) || 0);
+                    const girisStr = giris.toFixed(2);
+                    const cikisStr = cikis.toFixed(2);
+                    return girisStr.includes(af) || cikisStr.includes(af);
+                });
+            }
+        }
+        return result;
+    }, [records, filterVendor, filterDesc, filterAmount]);
+
     const missingCount = records ? records.filter(r => fileStatuses[r.doc] === false).length : 0;
     const foundCount = records ? records.filter(r => fileStatuses[r.doc] === true).length : 0;
 
@@ -1871,64 +1909,6 @@ export default function UploadPage() {
                     </div>
                 )}
 
-                {/* Activity log */}
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
-                    <button
-                        onClick={() => setActivityLogOpen(!activityLogOpen)}
-                        className="w-full px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
-                    >
-                        <div className="flex items-center gap-2">
-                            <Info className="h-4 w-4 text-indigo-500" />
-                            <h3 className="text-sm font-semibold">{t.activityLog}</h3>
-                            {checking && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
-                        </div>
-                        {activityLogOpen ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-                    </button>
-                    {activityLogOpen && (
-                        <div className="p-4 space-y-3">
-                            {checkStats ? (
-                                <>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.scopesSearched}</p>
-                                            <p className="font-semibold">{checkStats.totalScopes}</p>
-                                        </div>
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.apiCalls}</p>
-                                            <p className="font-semibold">{checkStats.totalApiCalls}</p>
-                                        </div>
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.filesInSharePoint}</p>
-                                            <p className="font-semibold">{checkStats.totalFilesFound}</p>
-                                        </div>
-                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.checkedFoundMissing}</p>
-                                            <p className="font-semibold">
-                                                {checkStats.totalUrls} / <span className="text-emerald-600 dark:text-emerald-400">{checkStats.found}</span> / <span className="text-rose-600 dark:text-rose-400">{checkStats.missing}</span>
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono">
-                                        {checkStats.perScope.map((s) => (
-                                            <div key={s.scope} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                                <Badge variant={s.folderExists ? "secondary" : "destructive"} className="text-[10px] px-1.5 py-0 min-w-[32px] justify-center">
-                                                    {s.folderExists ? "OK" : "404"}
-                                                </Badge>
-                                                <span className="truncate flex-1 text-zinc-600 dark:text-zinc-400">{s.scope}</span>
-                                                <span className="text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
-                                                    {s.apiCalls}req &middot; {s.filesInScope}files &middot; {s.found}/{s.checked}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            ) : (
-                                <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">{t.noCheckYet}</p>
-                            )}
-                        </div>
-                    )}
-                </div>
-
                 {/* Main content: split pane */}
                 {records === null && !isLoading ? (
                     <div className="text-center py-20 text-zinc-400 dark:text-zinc-500">
@@ -1947,16 +1927,37 @@ export default function UploadPage() {
                         <div className="lg:w-[40%] flex flex-col min-h-0">
                             <div className="flex items-center justify-between mb-2 shrink-0">
                                 <h3 className="text-sm font-semibold">
-                                    {t.records} ({records.length})
+                                    {t.records} ({filteredRecords.length}{filteredRecords.length !== records.length ? `/${records.length}` : ""})
                                 </h3>
                             </div>
+                            {/* Filters */}
+                            <div className="flex gap-1.5 mb-2 shrink-0">
+                                <Input
+                                    value={filterVendor}
+                                    onChange={e => setFilterVendor(e.target.value)}
+                                    placeholder={t.filterVendor}
+                                    className="h-7 text-xs"
+                                />
+                                <Input
+                                    value={filterDesc}
+                                    onChange={e => setFilterDesc(e.target.value)}
+                                    placeholder={t.filterDescription}
+                                    className="h-7 text-xs"
+                                />
+                                <Input
+                                    value={filterAmount}
+                                    onChange={e => setFilterAmount(e.target.value)}
+                                    placeholder={t.filterAmount}
+                                    className="h-7 text-xs w-24 shrink-0"
+                                />
+                            </div>
                             <div className="space-y-2 overflow-y-auto pr-1 flex-1 min-h-0">
-                                {records.length === 0 ? (
+                                {filteredRecords.length === 0 ? (
                                     <div className="text-center py-12 text-zinc-400 dark:text-zinc-500">
                                         <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
                                         <p className="text-sm">{t.noRecords}</p>
                                     </div>
-                                ) : records.map((record) => {
+                                ) : filteredRecords.map((record) => {
                                     const status = fileStatuses[record.doc];
                                     const isSelected = selectedRecord?.uniquecode === record.uniquecode;
                                     const giris = Math.abs(Number(record.giris_tutar) || 0);
@@ -2305,6 +2306,64 @@ export default function UploadPage() {
                         </div>
                     </div>
                 )}
+                {/* Activity log — footer */}
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                    <button
+                        onClick={() => setActivityLogOpen(!activityLogOpen)}
+                        className="w-full px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <Info className="h-4 w-4 text-indigo-500" />
+                            <h3 className="text-sm font-semibold">{t.activityLog}</h3>
+                            {checking && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+                        </div>
+                        {activityLogOpen ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                    </button>
+                    {activityLogOpen && (
+                        <div className="p-4 space-y-3">
+                            {checkStats ? (
+                                <>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.scopesSearched}</p>
+                                            <p className="font-semibold">{checkStats.totalScopes}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.apiCalls}</p>
+                                            <p className="font-semibold">{checkStats.totalApiCalls}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.filesInSharePoint}</p>
+                                            <p className="font-semibold">{checkStats.totalFilesFound}</p>
+                                        </div>
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.checkedFoundMissing}</p>
+                                            <p className="font-semibold">
+                                                {checkStats.totalUrls} / <span className="text-emerald-600 dark:text-emerald-400">{checkStats.found}</span> / <span className="text-rose-600 dark:text-rose-400">{checkStats.missing}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono">
+                                        {checkStats.perScope.map((s) => (
+                                            <div key={s.scope} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                                <Badge variant={s.folderExists ? "secondary" : "destructive"} className="text-[10px] px-1.5 py-0 min-w-[32px] justify-center">
+                                                    {s.folderExists ? "OK" : "404"}
+                                                </Badge>
+                                                <span className="truncate flex-1 text-zinc-600 dark:text-zinc-400">{s.scope}</span>
+                                                <span className="text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
+                                                    {s.apiCalls}req &middot; {s.filesInScope}files &middot; {s.found}/{s.checked}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-4">{t.noCheckYet}</p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
                 {/* Record Details Dialog */}
                 <Dialog open={!!viewDetailRecord} onOpenChange={(open) => { if (!open) setViewDetailRecord(null); }}>
                     <DialogContent className="max-w-[90vw] sm:max-w-[85vw]">
