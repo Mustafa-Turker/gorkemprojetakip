@@ -586,6 +586,13 @@ export default function IssuesPage() {
             );
         }
 
+        // Default sort by order number (last segment of uniquecode)
+        filtered.sort((a, b) => {
+            const aNum = parseInt(a.uniquecode?.split('.').pop() || '0', 10);
+            const bNum = parseInt(b.uniquecode?.split('.').pop() || '0', 10);
+            return aNum - bNum;
+        });
+
         return filtered;
     }, [records, tableSourceFilter, tableProjectFilter, tablePartnerFilter, statusFilter, fileStatuses, amountFilter, transTypeFilter, costFilter, dateFrom, dateTo, searchQuery]);
 
