@@ -137,6 +137,7 @@ interface DetailedTooltipPayload {
     received?: number;
     rsccInvoices?: number;
     rsccExchange?: number;
+    blocked?: number;
     netMonthly?: number;
     cumulative?: number;
 }
@@ -163,11 +164,12 @@ function ProjectFlowTooltip({
         </div>
     );
     return (
-        <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl min-w-[260px] space-y-1">
+        <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl min-w-[280px] space-y-1">
             {label !== undefined && label !== "" && <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">{label}</p>}
             {row("#10b981", "Total Received", d.received)}
             {row("#6366f1", "Transferred RSCC Invoices", d.rsccInvoices)}
             {row("#f59e0b", "Transferred RSCC Exchange", d.rsccExchange)}
+            {row("#ef4444", "Blocked", d.blocked)}
             <div className="border-t border-zinc-200/50 dark:border-zinc-700/50 pt-1 mt-1">
                 {row("#71717a", "Net Monthly", d.netMonthly)}
                 {row("#8b5cf6", "Cumulative", d.cumulative)}
@@ -312,9 +314,18 @@ export default function ReceivedAmountsPage() {
         };
     }, [filtered]);
 
-    // Monthly net position over time (all flows, monthly delta + cumulative)
+    // Monthly net position over time (all flows, monthly delta + cumulative + breakdown)
     const monthlyNetPosition = useMemo(() => {
-        const buckets: Record<string, { delta: number; key: string; sortKey: number }> = {};
+        type Bucket = {
+            sortKey: number;
+            month: string;
+            received: number;
+            rsccInvoices: number;
+            rsccExchange: number;
+            blocked: number;
+            netMonthly: number;
+        };
+        const buckets: Record<number, Bucket> = {};
         filtered.forEach((r) => {
             if (!r.date) return;
             const d = new Date(r.date);
@@ -322,14 +333,40 @@ export default function ReceivedAmountsPage() {
             const m = d.getUTCMonth();
             const key = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
             const sortKey = y * 12 + m;
-            if (!buckets[key]) buckets[key] = { delta: 0, key, sortKey };
-            buckets[key].delta += Number(r.usd_equal || 0);
+            if (!buckets[sortKey]) {
+                buckets[sortKey] = {
+                    sortKey,
+                    month: key,
+                    received: 0,
+                    rsccInvoices: 0,
+                    rsccExchange: 0,
+                    blocked: 0,
+                    netMonthly: 0,
+                };
+            }
+            const b = buckets[sortKey];
+            const v = Number(r.usd_equal || 0);
+            b.netMonthly += v;
+            if (r.type === "INCOME" || r.type === "KDV Return") b.received += v;
+            if (r.type === "BLOCKED") b.blocked += v;
+            if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
+                if (r.is_exchange) b.rsccExchange += v;
+                else b.rsccInvoices += v;
+            }
         });
         const arr = Object.values(buckets).sort((a, b) => a.sortKey - b.sortKey);
         let cum = 0;
         return arr.map((b) => {
-            cum += b.delta;
-            return { month: b.key, delta: Math.round(b.delta), cumulative: Math.round(cum) };
+            cum += b.netMonthly;
+            return {
+                month: b.month,
+                received: Math.round(b.received),
+                rsccInvoices: Math.round(b.rsccInvoices),
+                rsccExchange: Math.round(b.rsccExchange),
+                blocked: Math.round(b.blocked),
+                netMonthly: Math.round(b.netMonthly),
+                cumulative: Math.round(cum),
+            };
         });
     }, [filtered]);
 
@@ -346,6 +383,7 @@ export default function ReceivedAmountsPage() {
             received: number;
             rsccInvoices: number;
             rsccExchange: number;
+            blocked: number;
             netMonthly: number;
         };
         const projectMap: Record<string, Record<number, Bucket>> = {};
@@ -368,6 +406,7 @@ export default function ReceivedAmountsPage() {
                     received: 0,
                     rsccInvoices: 0,
                     rsccExchange: 0,
+                    blocked: 0,
                     netMonthly: 0,
                 };
             }
@@ -375,6 +414,7 @@ export default function ReceivedAmountsPage() {
             const v = Number(r.usd_equal || 0);
             b.netMonthly += v;
             if (r.type === "INCOME" || r.type === "KDV Return") b.received += v;
+            if (r.type === "BLOCKED") b.blocked += v;
             if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
                 if (r.is_exchange) b.rsccExchange += v;
                 else b.rsccInvoices += v;
@@ -392,6 +432,7 @@ export default function ReceivedAmountsPage() {
                         received: Math.round(b.received),
                         rsccInvoices: Math.round(b.rsccInvoices),
                         rsccExchange: Math.round(b.rsccExchange),
+                        blocked: Math.round(b.blocked),
                         netMonthly: Math.round(b.netMonthly),
                         cumulative: Math.round(cum),
                     };
@@ -686,11 +727,11 @@ export default function ReceivedAmountsPage() {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
                                     <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                    <Tooltip content={<CustomTooltip />} />
+                                    <Tooltip content={<ProjectFlowTooltip />} />
                                     <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                    <Bar dataKey="delta" name="Monthly Net">
+                                    <Bar dataKey="netMonthly" name="Monthly Net">
                                         {monthlyNetPosition.map((d, i) => (
-                                            <Cell key={i} fill={d.delta >= 0 ? "#10b981" : "#ef4444"} />
+                                            <Cell key={i} fill={d.netMonthly >= 0 ? "#10b981" : "#ef4444"} />
                                         ))}
                                     </Bar>
                                     <Line type="monotone" dataKey="cumulative" name="Cumulative" stroke="#6366f1" strokeWidth={2.5} dot={false} />
