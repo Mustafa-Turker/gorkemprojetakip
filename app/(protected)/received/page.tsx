@@ -117,10 +117,12 @@ interface TooltipProps {
 
 function CustomTooltip({ active, payload, label }: TooltipProps) {
     if (!active || !payload?.length) return null;
+    const nonZero = payload.filter((entry) => Number(entry.value) !== 0);
+    if (!nonZero.length) return null;
     return (
         <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl">
             {label !== undefined && label !== "" && <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">{label}</p>}
-            {payload.map((entry, i) => (
+            {nonZero.map((entry, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color || entry.payload?.fill }} />
                     <span className="text-zinc-600 dark:text-zinc-400">{entry.name}:</span>
@@ -455,7 +457,7 @@ export default function ReceivedAmountsPage() {
             .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
     }, [filtered]);
 
-    // Combined multi-project cash flow: one cumulative line per project on a shared timeline
+    // Combined multi-project monthly net (stacked, not cumulative)
     const combinedProjectFlow = useMemo(() => {
         const monthMap = new Map<number, { month: string; sortKey: number }>();
         const projectSet = new Set<string>();
@@ -479,14 +481,10 @@ export default function ReceivedAmountsPage() {
         const months = [...monthMap.values()].sort((a, b) => a.sortKey - b.sortKey);
         const projects = [...projectSet].sort();
 
-        const cumulative: Record<string, number> = {};
-        projects.forEach((p) => (cumulative[p] = 0));
-
         const data = months.map(({ month, sortKey }) => {
             const row: Record<string, number | string> = { month };
             projects.forEach((p) => {
-                cumulative[p] += deltas[p]?.[sortKey] || 0;
-                row[p] = Math.round(cumulative[p]);
+                row[p] = Math.round(deltas[p]?.[sortKey] || 0);
             });
             return row;
         });
@@ -767,11 +765,11 @@ export default function ReceivedAmountsPage() {
                             </ResponsiveContainer>
                         </ChartFrame>
 
-                        {/* Combined multi-project cash flow */}
+                        {/* Combined multi-project monthly net (stacked columns) */}
                         {combinedProjectFlow.projects.length > 0 && (
                             <ChartFrame
                                 title="Project Cash Flows (Combined)"
-                                subtitle="Stacked cumulative net per project on a shared timeline (excludes neutral ANK↔BAG transfers)"
+                                subtitle="Monthly net per project, stacked (excludes neutral ANK↔BAG transfers)"
                             >
                                 <ResponsiveContainer width="100%" height={420}>
                                     <ComposedChart data={combinedProjectFlow.data} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
@@ -780,22 +778,15 @@ export default function ReceivedAmountsPage() {
                                         <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
                                         <Tooltip content={<CustomTooltip />} />
                                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                        {combinedProjectFlow.projects.map((p, i) => {
-                                            const color = PIE_PALETTE[i % PIE_PALETTE.length];
-                                            return (
-                                                <Area
-                                                    key={p}
-                                                    type="monotone"
-                                                    dataKey={p}
-                                                    name={p}
-                                                    stackId="projects"
-                                                    stroke={color}
-                                                    fill={color}
-                                                    fillOpacity={0.55}
-                                                    strokeWidth={1.5}
-                                                />
-                                            );
-                                        })}
+                                        {combinedProjectFlow.projects.map((p, i) => (
+                                            <Bar
+                                                key={p}
+                                                dataKey={p}
+                                                name={p}
+                                                stackId="projects"
+                                                fill={PIE_PALETTE[i % PIE_PALETTE.length]}
+                                            />
+                                        ))}
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             </ChartFrame>
