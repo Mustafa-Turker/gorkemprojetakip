@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import {
     BarChart,
@@ -144,13 +144,6 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
     );
 }
 
-function getCookieUsername(): string | null {
-    if (typeof document === "undefined") return null;
-    const cookies = document.cookie.split(";");
-    const auth = cookies.find((c) => c.trim().startsWith("auth_token="));
-    if (!auth) return null;
-    return decodeURIComponent(auth.split("=")[1]);
-}
 
 interface FormState {
     id?: string;
@@ -187,10 +180,11 @@ export default function ReceivedAmountsPage() {
         dedupingInterval: 60000,
     });
 
-    const [username, setUsername] = useState<string | null>(null);
-    useEffect(() => {
-        setUsername(getCookieUsername());
-    }, []);
+    const { data: meData } = useSWR<{ username: string | null }>("/api/auth/me", fetcher, {
+        revalidateOnFocus: false,
+        dedupingInterval: 60000,
+    });
+    const username = meData?.username ?? null;
     const canEdit = username === EDITOR_USERNAME;
 
     // Filters
