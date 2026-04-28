@@ -135,6 +135,82 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
     );
 }
 
+interface CombinedTooltipBucket {
+    received?: number;
+    rsccInvoices?: number;
+    rsccExchange?: number;
+    blocked?: number;
+    jv?: number;
+    netMonthly?: number;
+}
+
+function CombinedProjectTooltip({
+    active,
+    payload,
+    label,
+}: {
+    active?: boolean;
+    payload?: { payload?: { _details?: Record<string, CombinedTooltipBucket> } }[];
+    label?: string | number;
+}) {
+    if (!active || !payload?.length) return null;
+    const details = payload[0]?.payload?._details;
+    if (!details) return null;
+
+    const projects = Object.keys(details)
+        .filter((p) => {
+            const d = details[p];
+            return (
+                (d.received ?? 0) !== 0 ||
+                (d.rsccInvoices ?? 0) !== 0 ||
+                (d.rsccExchange ?? 0) !== 0 ||
+                (d.blocked ?? 0) !== 0 ||
+                (d.jv ?? 0) !== 0 ||
+                (d.netMonthly ?? 0) !== 0
+            );
+        })
+        .sort();
+
+    if (!projects.length) return null;
+
+    const row = (color: string, lbl: string, value: number | undefined) => {
+        if (!value) return null;
+        return (
+            <div className="flex items-center gap-2 text-xs">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                <span className="text-zinc-600 dark:text-zinc-400 mr-auto">{lbl}:</span>
+                <span className={`font-semibold tabular-nums ${value < 0 ? "text-rose-600 dark:text-rose-400" : "text-zinc-900 dark:text-zinc-100"}`}>
+                    {formatCurrency(value)}
+                </span>
+            </div>
+        );
+    };
+
+    return (
+        <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl min-w-[300px] max-w-[420px] max-h-[480px] overflow-y-auto">
+            {label !== undefined && label !== "" && (
+                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">{label}</p>
+            )}
+            {projects.map((p, i) => {
+                const d = details[p];
+                return (
+                    <div key={p} className={i > 0 ? "border-t border-zinc-200/50 dark:border-zinc-700/50 pt-2 mt-2" : ""}>
+                        <p className="text-xs font-bold text-violet-600 dark:text-violet-400 mb-1 tracking-wide">{p}</p>
+                        <div className="space-y-0.5 pl-1">
+                            {row("#10b981", "Total Received", d.received)}
+                            {row("#6366f1", "RSCC Invoices", d.rsccInvoices)}
+                            {row("#f59e0b", "RSCC Exchange", d.rsccExchange)}
+                            {row("#ef4444", "Blocked", d.blocked)}
+                            {row("#06b6d4", "JV", d.jv)}
+                            {row("#71717a", "Net Monthly", d.netMonthly)}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 interface DetailedTooltipPayload {
     received?: number;
     rsccInvoices?: number;
@@ -457,11 +533,19 @@ export default function ReceivedAmountsPage() {
             .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
     }, [filtered]);
 
-    // Combined multi-project monthly net (stacked, not cumulative)
+    // Combined multi-project monthly net (stacked, not cumulative).
+    // Each row carries a _details map so the tooltip can show per-project breakdown.
     const combinedProjectFlow = useMemo(() => {
-        const monthMap = new Map<number, { month: string; sortKey: number }>();
+        type ProjectBucket = {
+            received: number;
+            rsccInvoices: number;
+            rsccExchange: number;
+            blocked: number;
+            jv: number;
+            netMonthly: number;
+        };
+        const monthMap = new Map<number, { month: string; sortKey: number; perProject: Record<string, ProjectBucket> }>();
         const projectSet = new Set<string>();
-        const deltas: Record<string, Record<number, number>> = {};
 
         filtered.forEach((r) => {
             if (!isProjectRelevant(r)) return;
@@ -472,19 +556,43 @@ export default function ReceivedAmountsPage() {
             const m = d.getUTCMonth();
             const sortKey = y * 12 + m;
             const monthLabel = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
-            if (!monthMap.has(sortKey)) monthMap.set(sortKey, { month: monthLabel, sortKey });
             projectSet.add(p);
-            if (!deltas[p]) deltas[p] = {};
-            deltas[p][sortKey] = (deltas[p][sortKey] || 0) + Number(r.usd_equal || 0);
+            if (!monthMap.has(sortKey)) {
+                monthMap.set(sortKey, { month: monthLabel, sortKey, perProject: {} });
+            }
+            const bucket = monthMap.get(sortKey)!;
+            if (!bucket.perProject[p]) {
+                bucket.perProject[p] = {
+                    received: 0,
+                    rsccInvoices: 0,
+                    rsccExchange: 0,
+                    blocked: 0,
+                    jv: 0,
+                    netMonthly: 0,
+                };
+            }
+            const b = bucket.perProject[p];
+            const v = Number(r.usd_equal || 0);
+            b.netMonthly += v;
+            if (r.counter_party === "JV") b.jv += v;
+            if ((r.type === "INCOME" || r.type === "KDV Return") && r.counter_party !== "JV") b.received += v;
+            if (r.type === "BLOCKED") b.blocked += v;
+            if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
+                if (r.is_exchange) b.rsccExchange += v;
+                else b.rsccInvoices += v;
+            }
         });
 
         const months = [...monthMap.values()].sort((a, b) => a.sortKey - b.sortKey);
         const projects = [...projectSet].sort();
 
-        const data = months.map(({ month, sortKey }) => {
-            const row: Record<string, number | string> = { month };
+        const data = months.map(({ month, perProject }) => {
+            const row: Record<string, number | string | Record<string, ProjectBucket>> = {
+                month,
+                _details: perProject,
+            };
             projects.forEach((p) => {
-                row[p] = Math.round(deltas[p]?.[sortKey] || 0);
+                row[p] = Math.round(perProject[p]?.netMonthly || 0);
             });
             return row;
         });
@@ -776,7 +884,7 @@ export default function ReceivedAmountsPage() {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
                                         <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
                                         <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                        <Tooltip content={<CustomTooltip />} />
+                                        <Tooltip content={<CombinedProjectTooltip />} />
                                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                         {combinedProjectFlow.projects.map((p, i) => (
                                             <Bar
