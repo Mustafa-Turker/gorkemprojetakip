@@ -24,8 +24,8 @@ app/
 ├── (protected)/          # Route group with server-side auth check
 │   ├── layout.tsx        # Auth guard - checks cookie, redirects to /login
 │   ├── page.tsx          # Main dashboard (Cost Metrics) - client component
-│   ├── received/page.tsx # Placeholder - "Coming Soon"
-│   ├── balances/page.tsx # Placeholder - "Coming Soon"
+│   ├── received/page.tsx # Treasury / cash distribution view of cash_flow table (mustafa-only edit)
+│   ├── balances/page.tsx # Project balance view (Net Position - Spent) per project + combined
 │   ├── study/page.tsx    # Placeholder - "Coming Soon"
 │   ├── issues/page.tsx   # Document management - SharePoint check/upload with filters
 │   ├── upload/page.tsx   # Split-pane PDF upload workflow (day-scoped records + PDF page extraction)
@@ -37,11 +37,16 @@ app/
 ├── api/
 │   ├── auth/
 │   │   ├── login/route.ts   # POST - cookie-based auth
-│   │   └── logout/route.ts  # POST - clears auth cookie
+│   │   ├── logout/route.ts  # POST - clears auth cookie
+│   │   └── me/route.ts      # GET - returns { username } from auth_token cookie (no-store cache headers)
 │   ├── auto-match/
 │   │   ├── ocr/route.js     # POST - downloads PDF from SharePoint + Mistral OCR → returns markdown per page
 │   │   ├── match/route.js   # POST - DeepSeek Reasoner matching (OCR pages + records → match matrix)
 │   │   └── pdf/route.js     # GET - proxy to download scanned PDF from SharePoint for client rendering
+│   ├── balance/route.js     # GET - monthly net position (cash_flow) + monthly spent (view_muhasebe_konsolide), keyed by project
+│   ├── cash-flow/
+│   │   ├── route.js         # GET (list) + POST (create, mustafa-only) for cash_flow table
+│   │   └── [id]/route.js    # PUT (update) + DELETE (hard delete), both mustafa-only
 │   ├── cashflow/route.js    # GET - monthly aggregated cash flow from view_muhasebe_konsolide
 │   ├── costs/route.js       # GET - fetches from PostgreSQL view
 │   ├── cost-codes/
@@ -68,6 +73,9 @@ lib/
 ├── sharepoint.js         # SharePoint Graph API integration (auth, folder listing, upload)
 ├── types.ts              # CostRecord, ChartDataPoint, YearlyDataPoint interfaces
 └── utils.ts              # cn() (tailwind-merge) + formatCurrency (USD)
+scripts/
+├── ship.sh              # Build+deploy (sources .dev.vars, sets cpSync shim NODE_OPTIONS)
+└── fix-cpsync.cjs       # Workaround: monkey-patches fs.cpSync (Node 22 + Windows bug)
 wrangler.jsonc            # Cloudflare Workers config + Hyperdrive binding
 open-next.config.ts       # OpenNext adapter config
 patches/
@@ -88,6 +96,12 @@ patches/
   - `parabirimi` is the currency code (e.g., USD, TRY, IQD)
   - `masrafmerkezi` is a 4-level cost code assigned by accountants. Required when `islemturu` is TAH-CA, KS-CZ, or BN-CZ.
   - `forgotten_cost` is a numeric column for unclassified cost amounts — used in cash flow calculations for records with empty `masrafmerkezi`
+- **Treasury / cash distribution table**: `public.cash_flow` — 13 columns: `id` (text, default `gen_random_uuid()`), `date`, `description`, `amount`, `currency`, `currency_rate`, `project`, `usd_equal` (GENERATED ALWAYS AS `amount / NULLIF(currency_rate, 0)` — never write to it), `type` (INCOME / TRANSFER / KDV Return / BLOCKED), `counter_party` (RSCC / BAG / ANK / JV / ZIRAAT / blank), `category`, `is_exchange` (boolean — flags FX conversion entries between us and RSCC), `source` (BAG / ANK)
+  - Tracks high-level capital flows (advance payments from clients, transfers between offices, blocked guarantee deposits, VAT refunds), NOT operational expenses
+  - INCOME = real income from clients, KDV Return = VAT refunds, BLOCKED = guarantee letter deposits, TRANSFER = inter-office / inter-company movements
+  - `counter_party = JV` represents withdrawals from the JV bank account — recorded as income at the time of withdrawal but distinct from client invoice payments
+  - `counter_party IN ('ANK', 'BAG')` rows are internal office-to-office transfers (neutral — they net to zero); per-project views exclude them via `counter_party NOT IN ('ANK', 'BAG')`
+  - Only 5 project codes have cash_flow entries (HQ, SRY, SRY2, ZBS, THR) plus blank — the other ~17 projects only appear in the cost/spent views
 
 ## Authentication
 
@@ -281,6 +295,43 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
     - ERB not supported for old format
   - **Table**: `Table_KasaHareketleri` in `KASAHAREKETLERI` sheet (same for both formats)
 
+## Received Amounts Page (`/received`)
+
+- **Purpose**: Treasury / cash distribution view of the `cash_flow` table — incoming funds and how they flow between offices, projects, and counter-parties (RSCC / JV)
+- **Data**: `GET /api/cash-flow` returns all rows ordered by date desc; refetched after edits via SWR `mutate`
+- **Editing (mustafa-only)**:
+  - `POST /api/cash-flow` — create row
+  - `PUT /api/cash-flow/[id]` — update row
+  - `DELETE /api/cash-flow/[id]` — hard delete (with confirm dialog)
+  - All write routes gate on `cookies().get('auth_token')?.value === 'mustafa'`; other users get 403
+  - UI determines `canEdit` via `GET /api/auth/me` (the auth_token cookie is httpOnly so `document.cookie` cannot read it client-side; `/api/auth/me` returns `{ username }` with `Cache-Control: no-store`)
+  - `usd_equal` is a generated column — UI auto-calculates `amount / currency_rate` for display only; never sent to DB on insert/update
+- **Filters**: Year, Source (BAG/ANK), Type, Project, Currency, free-text search — all client-side
+- **KPI Cards** (4):
+  1. **Net Position (BAG + ANK)** — running balance per source, sum of all `usd_equal` per source
+  2. **Currently Blocked** — sum of `|usd_equal|` where `type = BLOCKED`
+  3. **RSCC — Invoices** — IN / OUT / NET split for `type=TRANSFER, counter_party=RSCC, is_exchange=false` (permanent transfers between us and RSCC)
+  4. **RSCC — Exchange** — IN / OUT / NET split for `type=TRANSFER, counter_party=RSCC, is_exchange=true` (working-capital exchanges that flow back and forth)
+- **Charts** (top to bottom):
+  1. **Net Position Over Time** — monthly delta bars (green=positive, red=negative) + cumulative running total line
+  2. **ANK vs BAG — Cumulative Balance** — area chart, two lines, USD running total per source
+  3. **Project Cash Flows (Combined)** — stacked monthly column chart, one stacked segment per project per month, monthly net (NOT cumulative). Tooltip shows nested per-project breakdown for that month
+  4. **Per-project Cash Flow grid** — one chart per project that has cash_flow entries (HQ, SRY, SRY2, ZBS, THR)
+- **Detailed tooltip pattern** (used by Net Position, per-project, and combined chart): rows for Total Received, Transferred RSCC Invoices, Transferred RSCC Exchange, Blocked, JV, Net Monthly, Cumulative. Zero values are hidden. JV is excluded from "Total Received" so it shows as its own row without double-counting.
+- **Project relevance filter**: Per-project views and the project breakdown exclude `counter_party IN ('ANK', 'BAG')` rows (internal office transfers — neutral, net to zero).
+- **Data table**: All rows, filterable, with Edit/Delete buttons for mustafa. Columns: #, Date, Type, Description, Source, Project, Counter Party, Category, Amount, Currency, Rate, USD Equal, FX flag.
+
+## Balances Page (`/balances`)
+
+- **Purpose**: Project balance view — currently shows perspective 1: `Balance = Net Position − Spent`. (Perspective 2 — `Net Position + Expected Income − Cost` — to be added later when expected-income data source is available.)
+- **Data**: `GET /api/balance` returns two arrays:
+  - `netPosition`: `[{ yr, mo, project, amount }]` from `cash_flow` (excluding `counter_party IN ('ANK', 'BAG')`)
+  - `spent`: `[{ yr, mo, project, amount }]` from `view_muhasebe_konsolide` (`partner='GORKEM'`, `source != 'ERB'`, `cost > 0`, `SUM(-1 * usd_degeri) WHERE islemturu != 'TAH-CA'`)
+- **KPI Cards**: Total Net Position, Total Spent, Balance (Net − Spent)
+- **Combined chart** — monthly Net Position bars (green if positive, red if negative), Spent bars (red, semi-transparent), cumulative Balance line on top. Includes ALL projects (even those with no cash_flow entries) — their spent contributes to the combined view via shared month buckets.
+- **Per-project grid** — one chart per project that has cash_flow income entries (HQ, SRY, SRY2, ZBS, THR). Projects with no income (ADM, OBGH, GAC, etc.) are not broken out individually; their spent is only visible in the combined chart.
+- **Tooltip**: Net Position, Spent, Monthly Balance Δ, Cumulative Balance. Zero values hidden.
+
 ## Key Patterns
 
 - **Client-side data model**: All cost data fetched once via `/api/costs`, filtered on frontend using multi-select dropdowns per chart
@@ -330,6 +381,8 @@ Under the hood, `npm run ship` runs `opennextjs-cloudflare build && opennextjs-c
 1. Builds the Next.js app with webpack
 2. Bundles it for Cloudflare Workers via OpenNext
 3. Uploads assets and the worker bundle via Wrangler
+
+`scripts/ship.sh` also exports `NODE_OPTIONS=--require=scripts/fix-cpsync.cjs` before invoking the deploy. This is **load-bearing** on this machine: Node 22.22.2 + Windows has a bug where `fs.cpSync` silently fails (or hangs) when paths contain non-ASCII characters (`Türker` in the user profile path) or DOS short names (`MUSTAF~1` from `os.tmpdir()`). The shim monkey-patches `fs.cpSync` globally with a manual recursive copy via `copyFileSync`. Without it, OpenNext bundling produces empty `.open-next/.build/` and the deploy fails with `ENOENT: open-next.config.edge.mjs`.
 
 ## Branches
 
