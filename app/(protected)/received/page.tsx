@@ -138,6 +138,7 @@ interface DetailedTooltipPayload {
     rsccInvoices?: number;
     rsccExchange?: number;
     blocked?: number;
+    jv?: number;
     netMonthly?: number;
     cumulative?: number;
 }
@@ -170,6 +171,7 @@ function ProjectFlowTooltip({
             {row("#6366f1", "Transferred RSCC Invoices", d.rsccInvoices)}
             {row("#f59e0b", "Transferred RSCC Exchange", d.rsccExchange)}
             {row("#ef4444", "Blocked", d.blocked)}
+            {row("#06b6d4", "JV", d.jv)}
             <div className="border-t border-zinc-200/50 dark:border-zinc-700/50 pt-1 mt-1">
                 {row("#71717a", "Net Monthly", d.netMonthly)}
                 {row("#8b5cf6", "Cumulative", d.cumulative)}
@@ -323,6 +325,7 @@ export default function ReceivedAmountsPage() {
             rsccInvoices: number;
             rsccExchange: number;
             blocked: number;
+            jv: number;
             netMonthly: number;
         };
         const buckets: Record<number, Bucket> = {};
@@ -341,13 +344,15 @@ export default function ReceivedAmountsPage() {
                     rsccInvoices: 0,
                     rsccExchange: 0,
                     blocked: 0,
+                    jv: 0,
                     netMonthly: 0,
                 };
             }
             const b = buckets[sortKey];
             const v = Number(r.usd_equal || 0);
             b.netMonthly += v;
-            if (r.type === "INCOME" || r.type === "KDV Return") b.received += v;
+            if (r.counter_party === "JV") b.jv += v;
+            if ((r.type === "INCOME" || r.type === "KDV Return") && r.counter_party !== "JV") b.received += v;
             if (r.type === "BLOCKED") b.blocked += v;
             if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
                 if (r.is_exchange) b.rsccExchange += v;
@@ -364,6 +369,7 @@ export default function ReceivedAmountsPage() {
                 rsccInvoices: Math.round(b.rsccInvoices),
                 rsccExchange: Math.round(b.rsccExchange),
                 blocked: Math.round(b.blocked),
+                jv: Math.round(b.jv),
                 netMonthly: Math.round(b.netMonthly),
                 cumulative: Math.round(cum),
             };
@@ -384,6 +390,7 @@ export default function ReceivedAmountsPage() {
             rsccInvoices: number;
             rsccExchange: number;
             blocked: number;
+            jv: number;
             netMonthly: number;
         };
         const projectMap: Record<string, Record<number, Bucket>> = {};
@@ -407,13 +414,15 @@ export default function ReceivedAmountsPage() {
                     rsccInvoices: 0,
                     rsccExchange: 0,
                     blocked: 0,
+                    jv: 0,
                     netMonthly: 0,
                 };
             }
             const b = projectMap[p][sortKey];
             const v = Number(r.usd_equal || 0);
             b.netMonthly += v;
-            if (r.type === "INCOME" || r.type === "KDV Return") b.received += v;
+            if (r.counter_party === "JV") b.jv += v;
+            if ((r.type === "INCOME" || r.type === "KDV Return") && r.counter_party !== "JV") b.received += v;
             if (r.type === "BLOCKED") b.blocked += v;
             if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
                 if (r.is_exchange) b.rsccExchange += v;
@@ -433,6 +442,7 @@ export default function ReceivedAmountsPage() {
                         rsccInvoices: Math.round(b.rsccInvoices),
                         rsccExchange: Math.round(b.rsccExchange),
                         blocked: Math.round(b.blocked),
+                        jv: Math.round(b.jv),
                         netMonthly: Math.round(b.netMonthly),
                         cumulative: Math.round(cum),
                     };
