@@ -133,6 +133,49 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
     );
 }
 
+interface DetailedTooltipPayload {
+    received?: number;
+    rsccInvoices?: number;
+    rsccExchange?: number;
+    netMonthly?: number;
+    cumulative?: number;
+}
+
+function ProjectFlowTooltip({
+    active,
+    payload,
+    label,
+}: {
+    active?: boolean;
+    payload?: { payload?: DetailedTooltipPayload }[];
+    label?: string | number;
+}) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    if (!d) return null;
+    const row = (color: string, lbl: string, value: number | undefined) => (
+        <div className="flex items-center gap-2 text-sm">
+            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="text-zinc-600 dark:text-zinc-400 mr-auto">{lbl}:</span>
+            <span className={`font-semibold tabular-nums ${(value ?? 0) < 0 ? "text-rose-600 dark:text-rose-400" : "text-zinc-900 dark:text-zinc-100"}`}>
+                {formatCurrency(Number(value || 0))}
+            </span>
+        </div>
+    );
+    return (
+        <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl min-w-[260px] space-y-1">
+            {label !== undefined && label !== "" && <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">{label}</p>}
+            {row("#10b981", "Total Received", d.received)}
+            {row("#6366f1", "Transferred RSCC Invoices", d.rsccInvoices)}
+            {row("#f59e0b", "Transferred RSCC Exchange", d.rsccExchange)}
+            <div className="border-t border-zinc-200/50 dark:border-zinc-700/50 pt-1 mt-1">
+                {row("#71717a", "Net Monthly", d.netMonthly)}
+                {row("#8b5cf6", "Cumulative", d.cumulative)}
+            </div>
+        </div>
+    );
+}
+
 
 interface FormState {
     id?: string;
@@ -294,6 +337,69 @@ export default function ReceivedAmountsPage() {
     // are neutral and counter_party=ANK/BAG marks them as such).
     const isProjectRelevant = (r: CashFlowRow) =>
         r.counter_party !== "ANK" && r.counter_party !== "BAG";
+
+    // Per-project detailed monthly flow (with breakdown fields for tooltip)
+    const projectFlowsDetailed = useMemo(() => {
+        type Bucket = {
+            sortKey: number;
+            month: string;
+            received: number;
+            rsccInvoices: number;
+            rsccExchange: number;
+            netMonthly: number;
+        };
+        const projectMap: Record<string, Record<number, Bucket>> = {};
+
+        filtered.forEach((r) => {
+            if (!isProjectRelevant(r)) return;
+            if (!r.date) return;
+            const p = r.project || "(empty)";
+            const d = new Date(r.date);
+            const y = d.getUTCFullYear();
+            const m = d.getUTCMonth();
+            const sortKey = y * 12 + m;
+            const monthLabel = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
+
+            if (!projectMap[p]) projectMap[p] = {};
+            if (!projectMap[p][sortKey]) {
+                projectMap[p][sortKey] = {
+                    sortKey,
+                    month: monthLabel,
+                    received: 0,
+                    rsccInvoices: 0,
+                    rsccExchange: 0,
+                    netMonthly: 0,
+                };
+            }
+            const b = projectMap[p][sortKey];
+            const v = Number(r.usd_equal || 0);
+            b.netMonthly += v;
+            if (r.type === "INCOME" || r.type === "KDV Return") b.received += v;
+            if (r.type === "TRANSFER" && r.counter_party === "RSCC") {
+                if (r.is_exchange) b.rsccExchange += v;
+                else b.rsccInvoices += v;
+            }
+        });
+
+        return Object.entries(projectMap)
+            .map(([project, bucketMap]) => {
+                const sorted = Object.values(bucketMap).sort((a, b) => a.sortKey - b.sortKey);
+                let cum = 0;
+                const series = sorted.map((b) => {
+                    cum += b.netMonthly;
+                    return {
+                        month: b.month,
+                        received: Math.round(b.received),
+                        rsccInvoices: Math.round(b.rsccInvoices),
+                        rsccExchange: Math.round(b.rsccExchange),
+                        netMonthly: Math.round(b.netMonthly),
+                        cumulative: Math.round(cum),
+                    };
+                });
+                return { project, series, total: cum };
+            })
+            .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+    }, [filtered]);
 
     // Combined multi-project cash flow: one cumulative line per project on a shared timeline
     const combinedProjectFlow = useMemo(() => {
@@ -635,6 +741,41 @@ export default function ReceivedAmountsPage() {
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             </ChartFrame>
+                        )}
+
+                        {/* Per-project cash flow grid */}
+                        {projectFlowsDetailed.length > 0 && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {projectFlowsDetailed.map((p, i) => {
+                                    const color = PIE_PALETTE[i % PIE_PALETTE.length];
+                                    const positive = p.total >= 0;
+                                    return (
+                                        <ChartFrame
+                                            key={p.project}
+                                            title={`${p.project} — Cash Flow`}
+                                            subtitle={`Cumulative net • Total ${formatCurrency(p.total)}`}
+                                        >
+                                            <ResponsiveContainer width="100%" height={280}>
+                                                <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
+                                                    <Tooltip content={<ProjectFlowTooltip />} />
+                                                    <Area
+                                                        type="monotone"
+                                                        dataKey="cumulative"
+                                                        name={p.project}
+                                                        stroke={positive ? "#10b981" : "#ef4444"}
+                                                        fill={color}
+                                                        fillOpacity={0.18}
+                                                        strokeWidth={2.5}
+                                                    />
+                                                </ComposedChart>
+                                            </ResponsiveContainer>
+                                        </ChartFrame>
+                                    );
+                                })}
+                            </div>
                         )}
 
                         {/* Data table */}
