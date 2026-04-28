@@ -155,15 +155,18 @@ function ProjectFlowTooltip({
     if (!active || !payload?.length) return null;
     const d = payload[0]?.payload;
     if (!d) return null;
-    const row = (color: string, lbl: string, value: number | undefined) => (
-        <div className="flex items-center gap-2 text-sm">
-            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-            <span className="text-zinc-600 dark:text-zinc-400 mr-auto">{lbl}:</span>
-            <span className={`font-semibold tabular-nums ${(value ?? 0) < 0 ? "text-rose-600 dark:text-rose-400" : "text-zinc-900 dark:text-zinc-100"}`}>
-                {formatCurrency(Number(value || 0))}
-            </span>
-        </div>
-    );
+    const row = (color: string, lbl: string, value: number | undefined) => {
+        if (!value) return null;
+        return (
+            <div className="flex items-center gap-2 text-sm">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                <span className="text-zinc-600 dark:text-zinc-400 mr-auto">{lbl}:</span>
+                <span className={`font-semibold tabular-nums ${value < 0 ? "text-rose-600 dark:text-rose-400" : "text-zinc-900 dark:text-zinc-100"}`}>
+                    {formatCurrency(value)}
+                </span>
+            </div>
+        );
+    };
     return (
         <div className="rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl p-3 shadow-2xl min-w-[280px] space-y-1">
             {label !== undefined && label !== "" && <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">{label}</p>}
@@ -768,7 +771,7 @@ export default function ReceivedAmountsPage() {
                         {combinedProjectFlow.projects.length > 0 && (
                             <ChartFrame
                                 title="Project Cash Flows (Combined)"
-                                subtitle="Cumulative net per project on a shared timeline (excludes neutral ANK↔BAG transfers)"
+                                subtitle="Stacked cumulative net per project on a shared timeline (excludes neutral ANK↔BAG transfers)"
                             >
                                 <ResponsiveContainer width="100%" height={420}>
                                     <ComposedChart data={combinedProjectFlow.data} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
@@ -777,18 +780,22 @@ export default function ReceivedAmountsPage() {
                                         <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
                                         <Tooltip content={<CustomTooltip />} />
                                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                        {combinedProjectFlow.projects.map((p, i) => (
-                                            <Line
-                                                key={p}
-                                                type="monotone"
-                                                dataKey={p}
-                                                name={p}
-                                                stroke={PIE_PALETTE[i % PIE_PALETTE.length]}
-                                                strokeWidth={2.5}
-                                                dot={false}
-                                                activeDot={{ r: 4 }}
-                                            />
-                                        ))}
+                                        {combinedProjectFlow.projects.map((p, i) => {
+                                            const color = PIE_PALETTE[i % PIE_PALETTE.length];
+                                            return (
+                                                <Area
+                                                    key={p}
+                                                    type="monotone"
+                                                    dataKey={p}
+                                                    name={p}
+                                                    stackId="projects"
+                                                    stroke={color}
+                                                    fill={color}
+                                                    fillOpacity={0.55}
+                                                    strokeWidth={1.5}
+                                                />
+                                            );
+                                        })}
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             </ChartFrame>
