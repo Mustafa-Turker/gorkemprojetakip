@@ -3,11 +3,8 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import {
-    BarChart,
     Bar,
     Line,
-    PieChart,
-    Pie,
     Cell,
     XAxis,
     YAxis,
@@ -90,13 +87,6 @@ const TYPE_COLORS: Record<string, string> = {
     TRANSFER: "#6366f1",
     "KDV Return": "#f59e0b",
     BLOCKED: "#ef4444",
-};
-
-const CURRENCY_COLORS: Record<string, string> = {
-    USD: "#10b981",
-    IQD: "#f59e0b",
-    TRY: "#ef4444",
-    EUR: "#6366f1",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -279,27 +269,24 @@ export default function ReceivedAmountsPage() {
         };
     }, [filtered]);
 
-    // Monthly income timeline
-    const monthlyTimeline = useMemo(() => {
-        const buckets: Record<string, { income: number; kdv: number; key: string; sortKey: number }> = {};
+    // Monthly net position over time (all flows, monthly delta + cumulative)
+    const monthlyNetPosition = useMemo(() => {
+        const buckets: Record<string, { delta: number; key: string; sortKey: number }> = {};
         filtered.forEach((r) => {
-            if (r.type !== "INCOME" && r.type !== "KDV Return") return;
             if (!r.date) return;
             const d = new Date(r.date);
             const y = d.getUTCFullYear();
             const m = d.getUTCMonth();
             const key = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
             const sortKey = y * 12 + m;
-            if (!buckets[key]) buckets[key] = { income: 0, kdv: 0, key, sortKey };
-            const v = Number(r.usd_equal || 0);
-            if (r.type === "INCOME") buckets[key].income += v;
-            else buckets[key].kdv += v;
+            if (!buckets[key]) buckets[key] = { delta: 0, key, sortKey };
+            buckets[key].delta += Number(r.usd_equal || 0);
         });
         const arr = Object.values(buckets).sort((a, b) => a.sortKey - b.sortKey);
         let cum = 0;
         return arr.map((b) => {
-            cum += b.income + b.kdv;
-            return { month: b.key, income: b.income, kdv: b.kdv, cumulative: cum };
+            cum += b.delta;
+            return { month: b.key, delta: Math.round(b.delta), cumulative: Math.round(cum) };
         });
     }, [filtered]);
 
@@ -308,22 +295,12 @@ export default function ReceivedAmountsPage() {
     const isProjectRelevant = (r: CashFlowRow) =>
         r.counter_party !== "ANK" && r.counter_party !== "BAG";
 
-    // Per-project net position (single signed value per project)
-    const projectNet = useMemo(() => {
-        const map: Record<string, number> = {};
-        filtered.forEach((r) => {
-            if (!isProjectRelevant(r)) return;
-            const p = r.project || "(empty)";
-            map[p] = (map[p] || 0) + Number(r.usd_equal || 0);
-        });
-        return Object.entries(map)
-            .map(([project, net]) => ({ project, net }))
-            .sort((a, b) => b.net - a.net);
-    }, [filtered]);
+    // Combined multi-project cash flow: one cumulative line per project on a shared timeline
+    const combinedProjectFlow = useMemo(() => {
+        const monthMap = new Map<number, { month: string; sortKey: number }>();
+        const projectSet = new Set<string>();
+        const deltas: Record<string, Record<number, number>> = {};
 
-    // Per-project monthly cumulative cash flow (one series per project)
-    const projectFlows = useMemo(() => {
-        const projectMap: Record<string, Record<string, { sortKey: number; value: number }>> = {};
         filtered.forEach((r) => {
             if (!isProjectRelevant(r)) return;
             if (!r.date) return;
@@ -331,34 +308,30 @@ export default function ReceivedAmountsPage() {
             const d = new Date(r.date);
             const y = d.getUTCFullYear();
             const m = d.getUTCMonth();
-            const key = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
             const sortKey = y * 12 + m;
-            if (!projectMap[p]) projectMap[p] = {};
-            if (!projectMap[p][key]) projectMap[p][key] = { sortKey, value: 0 };
-            projectMap[p][key].value += Number(r.usd_equal || 0);
+            const monthLabel = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
+            if (!monthMap.has(sortKey)) monthMap.set(sortKey, { month: monthLabel, sortKey });
+            projectSet.add(p);
+            if (!deltas[p]) deltas[p] = {};
+            deltas[p][sortKey] = (deltas[p][sortKey] || 0) + Number(r.usd_equal || 0);
         });
-        return Object.entries(projectMap)
-            .map(([project, buckets]) => {
-                const sorted = Object.entries(buckets).sort((a, b) => a[1].sortKey - b[1].sortKey);
-                let cum = 0;
-                const series = sorted.map(([month, b]) => {
-                    cum += b.value;
-                    return { month, value: Math.round(cum) };
-                });
-                return { project, series, total: cum };
-            })
-            .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-    }, [filtered]);
 
-    // Currency mix (received in original currency, signed by USD equal)
-    const currencyMix = useMemo(() => {
-        const map: Record<string, number> = {};
-        filtered
-            .filter((r) => r.type === "INCOME" || r.type === "KDV Return")
-            .forEach((r) => {
-                map[r.currency] = (map[r.currency] || 0) + Number(r.usd_equal || 0);
+        const months = [...monthMap.values()].sort((a, b) => a.sortKey - b.sortKey);
+        const projects = [...projectSet].sort();
+
+        const cumulative: Record<string, number> = {};
+        projects.forEach((p) => (cumulative[p] = 0));
+
+        const data = months.map(({ month, sortKey }) => {
+            const row: Record<string, number | string> = { month };
+            projects.forEach((p) => {
+                cumulative[p] += deltas[p]?.[sortKey] || 0;
+                row[p] = Math.round(cumulative[p]);
             });
-        return Object.entries(map).map(([currency, value]) => ({ name: currency, value }));
+            return row;
+        });
+
+        return { data, projects };
     }, [filtered]);
 
     // Source flow (per-source cumulative balance over time)
@@ -569,18 +542,18 @@ export default function ReceivedAmountsPage() {
                         {/* KPI Cards */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                             <KpiCard
-                                label="Currently Blocked"
-                                value={Math.abs(kpis.totalBlocked)}
-                                icon={<Lock className="w-5 h-5 text-rose-500" />}
-                                accent="from-rose-500/10 to-rose-500/0"
-                                hint="Guarantee deposits / blocked funds"
-                            />
-                            <KpiCard
                                 label="Net Position (BAG + ANK)"
                                 value={(kpis.bySource.BAG || 0) + (kpis.bySource.ANK || 0)}
                                 icon={<Wallet className="w-5 h-5 text-violet-500" />}
                                 accent="from-violet-500/10 to-violet-500/0"
                                 hint={`BAG ${formatCurrency(kpis.bySource.BAG || 0)} • ANK ${formatCurrency(kpis.bySource.ANK || 0)}`}
+                            />
+                            <KpiCard
+                                label="Currently Blocked"
+                                value={Math.abs(kpis.totalBlocked)}
+                                icon={<Lock className="w-5 h-5 text-rose-500" />}
+                                accent="from-rose-500/10 to-rose-500/0"
+                                hint="Guarantee deposits / blocked funds"
                             />
                             <RsccCard
                                 label="RSCC — Invoices"
@@ -600,49 +573,26 @@ export default function ReceivedAmountsPage() {
                             />
                         </div>
 
-                        {/* Charts row 1: Income Timeline + Currency Mix */}
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                            <ChartFrame title="Monthly Income Timeline" subtitle="INCOME + KDV Return per month, with cumulative line" className="xl:col-span-2">
-                                <ResponsiveContainer width="100%" height={360}>
-                                    <ComposedChart data={monthlyTimeline} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                        <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                        <Tooltip content={<CustomTooltip />} />
-                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                        <Bar dataKey="income" name="INCOME" stackId="a" fill="#10b981" />
-                                        <Bar dataKey="kdv" name="KDV Return" stackId="a" fill="#f59e0b" />
-                                        <Line type="monotone" dataKey="cumulative" name="Cumulative" stroke="#6366f1" strokeWidth={2.5} dot={false} />
-                                    </ComposedChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
+                        {/* Net Position over time */}
+                        <ChartFrame title="Net Position Over Time" subtitle="Monthly net delta (bars) and cumulative running total (line) across all flows">
+                            <ResponsiveContainer width="100%" height={360}>
+                                <ComposedChart data={monthlyNetPosition} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                                    <Bar dataKey="delta" name="Monthly Net">
+                                        {monthlyNetPosition.map((d, i) => (
+                                            <Cell key={i} fill={d.delta >= 0 ? "#10b981" : "#ef4444"} />
+                                        ))}
+                                    </Bar>
+                                    <Line type="monotone" dataKey="cumulative" name="Cumulative" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </ChartFrame>
 
-                            <ChartFrame title="Currency Mix" subtitle="Received amounts by original currency">
-                                <ResponsiveContainer width="100%" height={360}>
-                                    <PieChart>
-                                        <Pie
-                                            data={currencyMix}
-                                            dataKey="value"
-                                            nameKey="name"
-                                            cx="50%"
-                                            cy="50%"
-                                            outerRadius={110}
-                                            innerRadius={55}
-                                            paddingAngle={2}
-                                            label={(entry: { name?: string | number }) => entry.name ?? ""}
-                                            labelLine={false}
-                                        >
-                                            {currencyMix.map((e, i) => (
-                                                <Cell key={e.name} fill={CURRENCY_COLORS[e.name] || PIE_PALETTE[i % PIE_PALETTE.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip content={<CustomTooltip />} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
-                        </div>
-
-                        {/* Charts row 2: ANK vs BAG balance over time */}
+                        {/* ANK vs BAG balance over time */}
                         <ChartFrame title="ANK vs BAG — Cumulative Balance" subtitle="USD running total per office over time">
                             <ResponsiveContainer width="100%" height={340}>
                                 <ComposedChart data={sourceFlow} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
@@ -657,56 +607,34 @@ export default function ReceivedAmountsPage() {
                             </ResponsiveContainer>
                         </ChartFrame>
 
-                        {/* Charts row 3: Project Net Position bar */}
-                        <ChartFrame title="Project Net Positions" subtitle="Net USD per project (excludes neutral ANK↔BAG transfers)">
-                            <ResponsiveContainer width="100%" height={Math.max(300, projectNet.length * 40 + 60)}>
-                                <BarChart data={projectNet} layout="vertical" margin={{ top: 10, right: 60, left: 50, bottom: 10 }}>
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e4e7" />
-                                    <XAxis type="number" tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} />
-                                    <YAxis type="category" dataKey="project" tick={{ fontSize: 12, fill: "#71717a" }} width={70} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Bar dataKey="net" name="Net">
-                                        {projectNet.map((e, i) => (
-                                            <Cell key={i} fill={e.net >= 0 ? "#10b981" : "#ef4444"} />
+                        {/* Combined multi-project cash flow */}
+                        {combinedProjectFlow.projects.length > 0 && (
+                            <ChartFrame
+                                title="Project Cash Flows (Combined)"
+                                subtitle="Cumulative net per project on a shared timeline (excludes neutral ANK↔BAG transfers)"
+                            >
+                                <ResponsiveContainer width="100%" height={420}>
+                                    <ComposedChart data={combinedProjectFlow.data} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                        <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                                        {combinedProjectFlow.projects.map((p, i) => (
+                                            <Line
+                                                key={p}
+                                                type="monotone"
+                                                dataKey={p}
+                                                name={p}
+                                                stroke={PIE_PALETTE[i % PIE_PALETTE.length]}
+                                                strokeWidth={2.5}
+                                                dot={false}
+                                                activeDot={{ r: 4 }}
+                                            />
                                         ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </ChartFrame>
-
-                        {/* Charts row 4: per-project cash flow grid */}
-                        {projectFlows.length > 0 && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {projectFlows.map((p, i) => {
-                                    const color = PIE_PALETTE[i % PIE_PALETTE.length];
-                                    const positive = p.total >= 0;
-                                    return (
-                                        <ChartFrame
-                                            key={p.project}
-                                            title={`${p.project} — Cash Flow`}
-                                            subtitle={`Cumulative net • Total ${formatCurrency(p.total)}`}
-                                        >
-                                            <ResponsiveContainer width="100%" height={260}>
-                                                <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                                                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
-                                                    <Tooltip content={<CustomTooltip />} />
-                                                    <Area
-                                                        type="monotone"
-                                                        dataKey="value"
-                                                        name={p.project}
-                                                        stroke={positive ? "#10b981" : "#ef4444"}
-                                                        fill={color}
-                                                        fillOpacity={0.18}
-                                                        strokeWidth={2.5}
-                                                    />
-                                                </ComposedChart>
-                                            </ResponsiveContainer>
-                                        </ChartFrame>
-                                    );
-                                })}
-                            </div>
+                                    </ComposedChart>
+                                </ResponsiveContainer>
+                            </ChartFrame>
                         )}
 
                         {/* Data table */}
