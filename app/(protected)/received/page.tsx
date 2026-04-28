@@ -21,7 +21,6 @@ import {
 import {
     AlertCircle,
     ArrowDownCircle,
-    ArrowUpCircle,
     Banknote,
     Lock,
     Pencil,
@@ -246,27 +245,38 @@ export default function ReceivedAmountsPage() {
 
     // KPIs (USD)
     const kpis = useMemo(() => {
-        const totalReceived = filtered
-            .filter((r) => r.type === "INCOME" || r.type === "KDV Return")
-            .reduce((s, r) => s + Number(r.usd_equal || 0), 0);
-
         const totalBlocked = filtered
             .filter((r) => r.type === "BLOCKED")
             .reduce((s, r) => s + Number(r.usd_equal || 0), 0);
 
-        // Distributed = transfers OUT (negative side of TRANSFER)
-        const distributed = filtered
-            .filter((r) => r.type === "TRANSFER" && Number(r.usd_equal || 0) < 0)
-            .reduce((s, r) => s + Math.abs(Number(r.usd_equal || 0)), 0);
-
-        // Net position per source: cumulative usd_equal
+        // Net position per source (BAG / ANK running balance from all rows in scope)
         const bySource: Record<string, number> = {};
         filtered.forEach((r) => {
             const src = r.source || "?";
             bySource[src] = (bySource[src] || 0) + Number(r.usd_equal || 0);
         });
 
-        return { totalReceived, totalBlocked, distributed, bySource };
+        // RSCC flows split by is_exchange
+        const splitRscc = (matchExchange: boolean) => {
+            let inAmt = 0;
+            let outAmt = 0;
+            filtered.forEach((r) => {
+                if (r.type !== "TRANSFER") return;
+                if (r.counter_party !== "RSCC") return;
+                if (!!r.is_exchange !== matchExchange) return;
+                const v = Number(r.usd_equal || 0);
+                if (v > 0) inAmt += v;
+                else outAmt += Math.abs(v);
+            });
+            return { in: inAmt, out: outAmt, net: inAmt - outAmt };
+        };
+
+        return {
+            totalBlocked,
+            bySource,
+            rsccInvoices: splitRscc(false),
+            rsccExchange: splitRscc(true),
+        };
     }, [filtered]);
 
     // Monthly income timeline
@@ -293,17 +303,51 @@ export default function ReceivedAmountsPage() {
         });
     }, [filtered]);
 
-    // Project view (received per project)
-    const projectView = useMemo(() => {
-        const map: Record<string, { project: string; received: number; transferred: number }> = {};
+    // Helper: rows excluded from project-level views (internal ANK<->BAG transfers
+    // are neutral and counter_party=ANK/BAG marks them as such).
+    const isProjectRelevant = (r: CashFlowRow) =>
+        r.counter_party !== "ANK" && r.counter_party !== "BAG";
+
+    // Per-project net position (single signed value per project)
+    const projectNet = useMemo(() => {
+        const map: Record<string, number> = {};
         filtered.forEach((r) => {
+            if (!isProjectRelevant(r)) return;
             const p = r.project || "(empty)";
-            if (!map[p]) map[p] = { project: p, received: 0, transferred: 0 };
-            const v = Number(r.usd_equal || 0);
-            if (r.type === "INCOME" || r.type === "KDV Return") map[p].received += v;
-            else if (r.type === "TRANSFER" && v < 0) map[p].transferred += Math.abs(v);
+            map[p] = (map[p] || 0) + Number(r.usd_equal || 0);
         });
-        return Object.values(map).sort((a, b) => b.received - a.received);
+        return Object.entries(map)
+            .map(([project, net]) => ({ project, net }))
+            .sort((a, b) => b.net - a.net);
+    }, [filtered]);
+
+    // Per-project monthly cumulative cash flow (one series per project)
+    const projectFlows = useMemo(() => {
+        const projectMap: Record<string, Record<string, { sortKey: number; value: number }>> = {};
+        filtered.forEach((r) => {
+            if (!isProjectRelevant(r)) return;
+            if (!r.date) return;
+            const p = r.project || "(empty)";
+            const d = new Date(r.date);
+            const y = d.getUTCFullYear();
+            const m = d.getUTCMonth();
+            const key = `${MONTH_NAMES[m]} ${String(y).slice(2)}`;
+            const sortKey = y * 12 + m;
+            if (!projectMap[p]) projectMap[p] = {};
+            if (!projectMap[p][key]) projectMap[p][key] = { sortKey, value: 0 };
+            projectMap[p][key].value += Number(r.usd_equal || 0);
+        });
+        return Object.entries(projectMap)
+            .map(([project, buckets]) => {
+                const sorted = Object.entries(buckets).sort((a, b) => a[1].sortKey - b[1].sortKey);
+                let cum = 0;
+                const series = sorted.map(([month, b]) => {
+                    cum += b.value;
+                    return { month, value: Math.round(cum) };
+                });
+                return { project, series, total: cum };
+            })
+            .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
     }, [filtered]);
 
     // Currency mix (received in original currency, signed by USD equal)
@@ -315,29 +359,6 @@ export default function ReceivedAmountsPage() {
                 map[r.currency] = (map[r.currency] || 0) + Number(r.usd_equal || 0);
             });
         return Object.entries(map).map(([currency, value]) => ({ name: currency, value }));
-    }, [filtered]);
-
-    // Type distribution (where money sits)
-    const typeBreakdown = useMemo(() => {
-        const map: Record<string, number> = {};
-        filtered.forEach((r) => {
-            map[r.type] = (map[r.type] || 0) + Math.abs(Number(r.usd_equal || 0));
-        });
-        return Object.entries(map).map(([name, value]) => ({ name, value }));
-    }, [filtered]);
-
-    // Counter-party flow (net USD between us and each counterparty)
-    const counterPartyFlow = useMemo(() => {
-        const map: Record<string, number> = {};
-        filtered
-            .filter((r) => r.type === "TRANSFER")
-            .forEach((r) => {
-                const cp = r.counter_party || "(blank)";
-                map[cp] = (map[cp] || 0) + Number(r.usd_equal || 0);
-            });
-        return Object.entries(map)
-            .map(([party, net]) => ({ party, net }))
-            .sort((a, b) => b.net - a.net);
     }, [filtered]);
 
     // Source flow (per-source cumulative balance over time)
@@ -546,21 +567,7 @@ export default function ReceivedAmountsPage() {
                 {!isLoading && !error && (
                     <>
                         {/* KPI Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <KpiCard
-                                label="Total Received"
-                                value={kpis.totalReceived}
-                                icon={<ArrowDownCircle className="w-5 h-5 text-emerald-500" />}
-                                accent="from-emerald-500/10 to-emerald-500/0"
-                                hint="INCOME + KDV Return"
-                            />
-                            <KpiCard
-                                label="Distributed (Transfers Out)"
-                                value={kpis.distributed}
-                                icon={<ArrowUpCircle className="w-5 h-5 text-indigo-500" />}
-                                accent="from-indigo-500/10 to-indigo-500/0"
-                                hint="Sum of negative TRANSFER usd_equal"
-                            />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                             <KpiCard
                                 label="Currently Blocked"
                                 value={Math.abs(kpis.totalBlocked)}
@@ -569,15 +576,31 @@ export default function ReceivedAmountsPage() {
                                 hint="Guarantee deposits / blocked funds"
                             />
                             <KpiCard
-                                label="Net Position (BAG / ANK)"
+                                label="Net Position (BAG + ANK)"
                                 value={(kpis.bySource.BAG || 0) + (kpis.bySource.ANK || 0)}
                                 icon={<Wallet className="w-5 h-5 text-violet-500" />}
                                 accent="from-violet-500/10 to-violet-500/0"
                                 hint={`BAG ${formatCurrency(kpis.bySource.BAG || 0)} • ANK ${formatCurrency(kpis.bySource.ANK || 0)}`}
                             />
+                            <RsccCard
+                                label="RSCC — Invoices"
+                                inAmt={kpis.rsccInvoices.in}
+                                outAmt={kpis.rsccInvoices.out}
+                                netAmt={kpis.rsccInvoices.net}
+                                accent="from-indigo-500/10 to-indigo-500/0"
+                                hint="TRANSFER • counter_party=RSCC • is_exchange=false"
+                            />
+                            <RsccCard
+                                label="RSCC — Exchange"
+                                inAmt={kpis.rsccExchange.in}
+                                outAmt={kpis.rsccExchange.out}
+                                netAmt={kpis.rsccExchange.net}
+                                accent="from-amber-500/10 to-amber-500/0"
+                                hint="TRANSFER • counter_party=RSCC • is_exchange=true"
+                            />
                         </div>
 
-                        {/* Charts row 1 */}
+                        {/* Charts row 1: Income Timeline + Currency Mix */}
                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                             <ChartFrame title="Monthly Income Timeline" subtitle="INCOME + KDV Return per month, with cumulative line" className="xl:col-span-2">
                                 <ResponsiveContainer width="100%" height={360}>
@@ -594,82 +617,8 @@ export default function ReceivedAmountsPage() {
                                 </ResponsiveContainer>
                             </ChartFrame>
 
-                            <ChartFrame title="Type Breakdown" subtitle="Volume by transaction type">
-                                <ResponsiveContainer width="100%" height={360}>
-                                    <PieChart>
-                                        <Pie
-                                            data={typeBreakdown}
-                                            dataKey="value"
-                                            nameKey="name"
-                                            cx="50%"
-                                            cy="50%"
-                                            outerRadius={110}
-                                            innerRadius={55}
-                                            paddingAngle={2}
-                                            label={(entry: { name?: string | number }) => entry.name ?? ""}
-                                            labelLine={false}
-                                        >
-                                            {typeBreakdown.map((e) => (
-                                                <Cell key={e.name} fill={TYPE_COLORS[e.name] || "#888"} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip content={<CustomTooltip />} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
-                        </div>
-
-                        {/* Charts row 2 */}
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            <ChartFrame title="Cumulative Balance per Source" subtitle="USD running total — ANK vs BAG over time">
-                                <ResponsiveContainer width="100%" height={340}>
-                                    <ComposedChart data={sourceFlow} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                        <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                        <Tooltip content={<CustomTooltip />} />
-                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                        <Area type="monotone" dataKey="BAG" name="BAG" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} strokeWidth={2.5} />
-                                        <Area type="monotone" dataKey="ANK" name="ANK" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.2} strokeWidth={2.5} />
-                                    </ComposedChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
-
-                            <ChartFrame title="Counter-Party Net Flow" subtitle="Net USD per counter-party (positive = received, negative = sent)">
-                                <ResponsiveContainer width="100%" height={340}>
-                                    <BarChart data={counterPartyFlow} layout="vertical" margin={{ top: 10, right: 30, left: 60, bottom: 10 }}>
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e4e7" />
-                                        <XAxis type="number" tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} />
-                                        <YAxis type="category" dataKey="party" tick={{ fontSize: 12, fill: "#71717a" }} width={80} />
-                                        <Tooltip content={<CustomTooltip />} />
-                                        <Bar dataKey="net" name="Net Flow">
-                                            {counterPartyFlow.map((e, i) => (
-                                                <Cell key={i} fill={e.net >= 0 ? "#10b981" : "#ef4444"} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
-                        </div>
-
-                        {/* Charts row 3 */}
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                            <ChartFrame title="Project View" subtitle="Received & transferred-out per project (USD)" className="xl:col-span-2">
-                                <ResponsiveContainer width="100%" height={340}>
-                                    <BarChart data={projectView} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                                        <XAxis dataKey="project" tick={{ fontSize: 11, fill: "#71717a" }} />
-                                        <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                        <Tooltip content={<CustomTooltip />} />
-                                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                        <Bar dataKey="received" name="Received" fill="#10b981" />
-                                        <Bar dataKey="transferred" name="Transferred Out" fill="#6366f1" />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </ChartFrame>
-
                             <ChartFrame title="Currency Mix" subtitle="Received amounts by original currency">
-                                <ResponsiveContainer width="100%" height={340}>
+                                <ResponsiveContainer width="100%" height={360}>
                                     <PieChart>
                                         <Pie
                                             data={currencyMix}
@@ -692,6 +641,73 @@ export default function ReceivedAmountsPage() {
                                 </ResponsiveContainer>
                             </ChartFrame>
                         </div>
+
+                        {/* Charts row 2: ANK vs BAG balance over time */}
+                        <ChartFrame title="ANK vs BAG — Cumulative Balance" subtitle="USD running total per office over time">
+                            <ResponsiveContainer width="100%" height={340}>
+                                <ComposedChart data={sourceFlow} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                                    <Area type="monotone" dataKey="BAG" name="BAG" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} strokeWidth={2.5} />
+                                    <Area type="monotone" dataKey="ANK" name="ANK" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.2} strokeWidth={2.5} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </ChartFrame>
+
+                        {/* Charts row 3: Project Net Position bar */}
+                        <ChartFrame title="Project Net Positions" subtitle="Net USD per project (excludes neutral ANK↔BAG transfers)">
+                            <ResponsiveContainer width="100%" height={Math.max(300, projectNet.length * 40 + 60)}>
+                                <BarChart data={projectNet} layout="vertical" margin={{ top: 10, right: 60, left: 50, bottom: 10 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e4e7" />
+                                    <XAxis type="number" tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} />
+                                    <YAxis type="category" dataKey="project" tick={{ fontSize: 12, fill: "#71717a" }} width={70} />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Bar dataKey="net" name="Net">
+                                        {projectNet.map((e, i) => (
+                                            <Cell key={i} fill={e.net >= 0 ? "#10b981" : "#ef4444"} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </ChartFrame>
+
+                        {/* Charts row 4: per-project cash flow grid */}
+                        {projectFlows.length > 0 && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {projectFlows.map((p, i) => {
+                                    const color = PIE_PALETTE[i % PIE_PALETTE.length];
+                                    const positive = p.total >= 0;
+                                    return (
+                                        <ChartFrame
+                                            key={p.project}
+                                            title={`${p.project} — Cash Flow`}
+                                            subtitle={`Cumulative net • Total ${formatCurrency(p.total)}`}
+                                        >
+                                            <ResponsiveContainer width="100%" height={260}>
+                                                <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                    <Area
+                                                        type="monotone"
+                                                        dataKey="value"
+                                                        name={p.project}
+                                                        stroke={positive ? "#10b981" : "#ef4444"}
+                                                        fill={color}
+                                                        fillOpacity={0.18}
+                                                        strokeWidth={2.5}
+                                                    />
+                                                </ComposedChart>
+                                            </ResponsiveContainer>
+                                        </ChartFrame>
+                                    );
+                                })}
+                            </div>
+                        )}
 
                         {/* Data table */}
                         <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
@@ -938,6 +954,52 @@ function KpiCard({
                 </div>
                 <p className="text-2xl font-bold text-zinc-900 dark:text-white tabular-nums">{formatCurrency(value)}</p>
                 {hint && <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{hint}</p>}
+            </div>
+        </div>
+    );
+}
+
+function RsccCard({
+    label,
+    inAmt,
+    outAmt,
+    netAmt,
+    accent,
+    hint,
+}: {
+    label: string;
+    inAmt: number;
+    outAmt: number;
+    netAmt: number;
+    accent: string;
+    hint?: string;
+}) {
+    const netPositive = netAmt >= 0;
+    return (
+        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm p-5">
+            <div className={`absolute inset-0 bg-gradient-to-br ${accent} pointer-events-none`} />
+            <div className="relative">
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">{label}</span>
+                    <ArrowDownCircle className="w-5 h-5 text-zinc-400" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-0.5">In</p>
+                        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(inAmt)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-0.5">Out</p>
+                        <p className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">{formatCurrency(outAmt)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-0.5">Net</p>
+                        <p className={`text-sm font-bold tabular-nums ${netPositive ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+                            {formatCurrency(netAmt)}
+                        </p>
+                    </div>
+                </div>
+                {hint && <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-3 truncate" title={hint}>{hint}</p>}
             </div>
         </div>
     );
