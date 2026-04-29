@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import {
     Bar,
@@ -17,6 +17,8 @@ import {
 import { AlertCircle, Wallet, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { formatCurrency } from "@/lib/utils";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -134,10 +136,32 @@ export default function BalancesPage() {
         dedupingInterval: 60000,
     });
 
+    // All distinct projects (union of net position and spent), used by the multi-select
+    const allProjects = useMemo(() => {
+        if (!data) return [];
+        const set = new Set<string>();
+        data.netPosition.forEach((r) => r.project && set.add(r.project));
+        data.spent.forEach((r) => r.project && set.add(r.project));
+        const sorted = [...set].sort();
+        // Push "(empty)" to the end if present
+        return sorted.filter((p) => p !== "(empty)").concat(sorted.filter((p) => p === "(empty)"));
+    }, [data]);
+
+    // null = user hasn't interacted, default to all projects
+    const [selectedProjects, setSelectedProjects] = useState<string[] | null>(null);
+    const effectiveSelected = useMemo(
+        () => (selectedProjects === null ? allProjects : selectedProjects),
+        [selectedProjects, allProjects]
+    );
+
     const overallSeries = useMemo(() => {
         if (!data) return [];
-        return buildSeries(data.netPosition, data.spent);
-    }, [data]);
+        if (!effectiveSelected.length) return [];
+        const allowed = new Set(effectiveSelected);
+        const netFiltered = data.netPosition.filter((r) => allowed.has(r.project));
+        const spentFiltered = data.spent.filter((r) => allowed.has(r.project));
+        return buildSeries(netFiltered, spentFiltered);
+    }, [data, effectiveSelected]);
 
     const projectSeries = useMemo(() => {
         if (!data) return [];
@@ -216,8 +240,40 @@ export default function BalancesPage() {
                         {/* Combined balance chart */}
                         <ChartFrame
                             title="Overall Balance — All Projects Combined"
-                            subtitle="Monthly Net Position (green) and Spent (red) bars; cumulative balance line on top"
+                            subtitle={
+                                effectiveSelected.length === allProjects.length
+                                    ? "All projects • Monthly Net Position (green) and Spent (red) bars; cumulative balance line"
+                                    : `${effectiveSelected.length} of ${allProjects.length} projects selected`
+                            }
                         >
+                            <div className="mb-4 flex flex-wrap items-start gap-3">
+                                <div className="flex-1 min-w-[280px] max-w-[700px]">
+                                    <MultiSelect
+                                        options={allProjects.map((p) => ({ label: p, value: p }))}
+                                        selected={effectiveSelected}
+                                        onChange={setSelectedProjects}
+                                        placeholder="Select projects..."
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setSelectedProjects(null)}
+                                        disabled={effectiveSelected.length === allProjects.length}
+                                    >
+                                        Select All
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setSelectedProjects([])}
+                                        disabled={effectiveSelected.length === 0}
+                                    >
+                                        Clear
+                                    </Button>
+                                </div>
+                            </div>
                             <ResponsiveContainer width="100%" height={420}>
                                 <ComposedChart data={overallSeries} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
