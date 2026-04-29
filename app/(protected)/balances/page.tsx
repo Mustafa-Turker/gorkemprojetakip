@@ -270,7 +270,7 @@ export default function BalancesPage() {
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
                                     <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
                                     <YAxis yAxisId="bars" hide orientation="right" domain={overallBarDomain} />
-                                    <ReferenceLine y={0} stroke="#3f3f46" strokeWidth={1.5} />
+                                    <ReferenceLine y={0} stroke="#71717a" strokeWidth={1} />
                                     <Tooltip content={<BalanceTooltip />} />
                                     <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                     <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
@@ -304,7 +304,7 @@ export default function BalancesPage() {
                                                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
                                                     <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
                                                     <YAxis yAxisId="bars" hide orientation="right" domain={barDomain} />
-                                                    <ReferenceLine y={0} stroke="#3f3f46" strokeWidth={1.5} />
+                                                    <ReferenceLine y={0} stroke="#71717a" strokeWidth={1} />
                                                     <Tooltip content={<BalanceTooltip />} />
                                                     <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
                                                         {p.series.map((d, idx) => (
