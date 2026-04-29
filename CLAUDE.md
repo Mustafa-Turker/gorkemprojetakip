@@ -327,9 +327,14 @@ For production, `USERS` is set as a `vars` binding in `wrangler.jsonc`, and Hype
 - **Data**: `GET /api/balance` returns two arrays:
   - `netPosition`: `[{ yr, mo, project, amount }]` from `cash_flow` (excluding `counter_party IN ('ANK', 'BAG')`)
   - `spent`: `[{ yr, mo, project, amount }]` from `view_muhasebe_konsolide` (`partner='GORKEM'`, `source != 'ERB'`, `cost > 0`, `SUM(-1 * usd_degeri) WHERE islemturu != 'TAH-CA'`)
-- **KPI Cards**: Total Net Position, Total Spent, Balance (Net − Spent)
-- **Combined chart** — monthly Net Position bars (green if positive, red if negative), Spent bars (red, semi-transparent), cumulative Balance line on top. Includes ALL projects (even those with no cash_flow entries) — their spent contributes to the combined view via shared month buckets.
-- **Per-project grid** — one chart per project that has cash_flow income entries (HQ, SRY, SRY2, ZBS, THR). Projects with no income (ADM, OBGH, GAC, etc.) are not broken out individually; their spent is only visible in the combined chart.
+- **KPI Cards**: Total Net Position, Total Spent, Balance (Net − Spent). All three follow the project filter selection.
+- **Project filter (combined chart only)** — `CompactMultiSelect` above the combined chart. Empty selection is treated as "ALL Projects" (placeholder shown as the trigger label). Selecting individual projects narrows the combined view; clearing returns to ALL. Options are the union of all projects from both data sources (~22).
+- **Combined chart** — monthly Net Position bars (green if positive, red if negative), Spent bars (red, semi-transparent), cumulative Balance line on top. With ALL selected, includes every project; the Spent of projects without cash_flow entries still shows here even though they don't get a per-project chart below.
+- **Per-project grid** — one chart per project that has cash_flow income entries (HQ, SRY, SRY2, ZBS, THR). Projects with no income (ADM, OBGH, GAC, etc.) are not broken out individually; their spent is only visible in the combined chart. The per-project grid is NOT affected by the project filter (filter only applies to the combined chart).
+- **Chart layout** — uses dual Y-axis to keep the column bars anchored to the bottom of the chart area (visually) without breaking the cumulative line scale:
+  - Visible left Y-axis: default axis, line uses it, labels show values like before
+  - Hidden right Y-axis (`yAxisId="bars"`, `hide`, `orientation="right"`, `domain={[0, maxBar*3.5]}`): bars use this; the inflated upper bound pushes bars to occupy the lower ~30% of the chart
+  - `<ReferenceLine y={0}>` with stroke `#71717a` (zinc-500), strokeWidth 1 — solid darker line on top of the dashed grid to mark the zero baseline clearly
 - **Tooltip**: Net Position, Spent, Monthly Balance Δ, Cumulative Balance. Zero values hidden.
 
 ## Key Patterns
