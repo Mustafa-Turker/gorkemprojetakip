@@ -17,8 +17,7 @@ import {
 import { AlertCircle, Wallet, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { MultiSelect } from "@/components/ui/multi-select";
+import { CompactMultiSelect } from "@/components/ui/compact-multi-select";
 import { formatCurrency } from "@/lib/utils";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -147,21 +146,28 @@ export default function BalancesPage() {
         return sorted.filter((p) => p !== "(empty)").concat(sorted.filter((p) => p === "(empty)"));
     }, [data]);
 
-    // null = user hasn't interacted, default to all projects
-    const [selectedProjects, setSelectedProjects] = useState<string[] | null>(null);
-    const effectiveSelected = useMemo(
-        () => (selectedProjects === null ? allProjects : selectedProjects),
-        [selectedProjects, allProjects]
-    );
+    // Empty selection = ALL projects (semantically). Picking specific projects narrows.
+    const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+    const isAll = selectedProjects.length === 0;
 
     const overallSeries = useMemo(() => {
         if (!data) return [];
-        if (!effectiveSelected.length) return [];
-        const allowed = new Set(effectiveSelected);
+        if (isAll) return buildSeries(data.netPosition, data.spent);
+        const allowed = new Set(selectedProjects);
         const netFiltered = data.netPosition.filter((r) => allowed.has(r.project));
         const spentFiltered = data.spent.filter((r) => allowed.has(r.project));
         return buildSeries(netFiltered, spentFiltered);
-    }, [data, effectiveSelected]);
+    }, [data, selectedProjects, isAll]);
+
+    // Bar Y-axis domain: scale bars to occupy lower portion of the chart so the
+    // cumulative line has room above. Multiplier is tuned per chart.
+    const overallBarDomain = useMemo<[number, number]>(() => {
+        if (!overallSeries.length) return [0, 1];
+        const maxBar = Math.max(
+            ...overallSeries.map((d) => Math.max(d.netPosition, d.spent))
+        );
+        return [0, maxBar > 0 ? maxBar * 3.5 : 1];
+    }, [overallSeries]);
 
     const projectSeries = useMemo(() => {
         if (!data) return [];
@@ -241,53 +247,37 @@ export default function BalancesPage() {
                         <ChartFrame
                             title="Overall Balance — All Projects Combined"
                             subtitle={
-                                effectiveSelected.length === allProjects.length
-                                    ? "All projects • Monthly Net Position (green) and Spent (red) bars; cumulative balance line"
-                                    : `${effectiveSelected.length} of ${allProjects.length} projects selected`
+                                isAll
+                                    ? "ALL projects • Monthly Net Position (green) and Spent (red) bars; cumulative balance line"
+                                    : `${selectedProjects.length} of ${allProjects.length} projects selected`
                             }
                         >
-                            <div className="mb-4 flex flex-wrap items-start gap-3">
-                                <div className="flex-1 min-w-[280px] max-w-[700px]">
-                                    <MultiSelect
+                            <div className="mb-4 flex flex-wrap items-center gap-3">
+                                <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Projects</span>
+                                <div className="w-[260px]">
+                                    <CompactMultiSelect
                                         options={allProjects.map((p) => ({ label: p, value: p }))}
-                                        selected={effectiveSelected}
+                                        selected={selectedProjects}
                                         onChange={setSelectedProjects}
-                                        placeholder="Select projects..."
+                                        placeholder="ALL Projects"
                                     />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => setSelectedProjects(null)}
-                                        disabled={effectiveSelected.length === allProjects.length}
-                                    >
-                                        Select All
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => setSelectedProjects([])}
-                                        disabled={effectiveSelected.length === 0}
-                                    >
-                                        Clear
-                                    </Button>
                                 </div>
                             </div>
                             <ResponsiveContainer width="100%" height={420}>
                                 <ComposedChart data={overallSeries} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                    <YAxis yAxisId="line" tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                    <YAxis yAxisId="bars" hide domain={overallBarDomain} />
                                     <Tooltip content={<BalanceTooltip />} />
                                     <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                    <Bar dataKey="netPosition" name="Net Position">
+                                    <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
                                         {overallSeries.map((d, i) => (
                                             <Cell key={i} fill={d.netPosition >= 0 ? "#10b981" : "#ef4444"} />
                                         ))}
                                     </Bar>
-                                    <Bar dataKey="spent" name="Spent (out)" fill="#ef4444" fillOpacity={0.55} />
-                                    <Line type="monotone" dataKey="cumulative" name="Cumulative Balance" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                                    <Bar yAxisId="bars" dataKey="spent" name="Spent (out)" fill="#ef4444" fillOpacity={0.55} />
+                                    <Line yAxisId="line" type="monotone" dataKey="cumulative" name="Cumulative Balance" stroke="#6366f1" strokeWidth={2.5} dot={false} />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         </ChartFrame>
@@ -295,36 +285,44 @@ export default function BalancesPage() {
                         {/* Per-project grid */}
                         {projectSeries.length > 0 && (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {projectSeries.map((p, i) => (
-                                    <ChartFrame
-                                        key={p.project}
-                                        title={`${p.project} — Balance`}
-                                        subtitle={`Cumulative ${formatCurrency(p.total)}`}
-                                    >
-                                        <ResponsiveContainer width="100%" height={280}>
-                                            <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                                                <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                                <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
-                                                <Tooltip content={<BalanceTooltip />} />
-                                                <Bar dataKey="netPosition" name="Net Position">
-                                                    {p.series.map((d, idx) => (
-                                                        <Cell key={idx} fill={d.netPosition >= 0 ? "#10b981" : "#ef4444"} />
-                                                    ))}
-                                                </Bar>
-                                                <Bar dataKey="spent" name="Spent" fill="#ef4444" fillOpacity={0.55} />
-                                                <Line
-                                                    type="monotone"
-                                                    dataKey="cumulative"
-                                                    name="Cumulative"
-                                                    stroke={PIE_PALETTE[i % PIE_PALETTE.length]}
-                                                    strokeWidth={2.5}
-                                                    dot={false}
-                                                />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </ChartFrame>
-                                ))}
+                                {projectSeries.map((p, i) => {
+                                    const maxBar = p.series.length
+                                        ? Math.max(...p.series.map((d) => Math.max(d.netPosition, d.spent)))
+                                        : 1;
+                                    const barDomain: [number, number] = [0, maxBar > 0 ? maxBar * 3.5 : 1];
+                                    return (
+                                        <ChartFrame
+                                            key={p.project}
+                                            title={`${p.project} — Balance`}
+                                            subtitle={`Cumulative ${formatCurrency(p.total)}`}
+                                        >
+                                            <ResponsiveContainer width="100%" height={280}>
+                                                <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                                                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
+                                                    <YAxis yAxisId="line" tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
+                                                    <YAxis yAxisId="bars" hide domain={barDomain} />
+                                                    <Tooltip content={<BalanceTooltip />} />
+                                                    <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
+                                                        {p.series.map((d, idx) => (
+                                                            <Cell key={idx} fill={d.netPosition >= 0 ? "#10b981" : "#ef4444"} />
+                                                        ))}
+                                                    </Bar>
+                                                    <Bar yAxisId="bars" dataKey="spent" name="Spent" fill="#ef4444" fillOpacity={0.55} />
+                                                    <Line
+                                                        yAxisId="line"
+                                                        type="monotone"
+                                                        dataKey="cumulative"
+                                                        name="Cumulative"
+                                                        stroke={PIE_PALETTE[i % PIE_PALETTE.length]}
+                                                        strokeWidth={2.5}
+                                                        dot={false}
+                                                    />
+                                                </ComposedChart>
+                                            </ResponsiveContainer>
+                                        </ChartFrame>
+                                    );
+                                })}
                             </div>
                         )}
                     </>
