@@ -267,8 +267,8 @@ export default function BalancesPage() {
                                 <ComposedChart data={overallSeries} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                    <YAxis yAxisId="line" tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
-                                    <YAxis yAxisId="bars" hide domain={overallBarDomain} />
+                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 11, fill: "#71717a" }} width={70} />
+                                    <YAxis yAxisId="bars" hide orientation="right" domain={overallBarDomain} />
                                     <Tooltip content={<BalanceTooltip />} />
                                     <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                     <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
@@ -277,7 +277,7 @@ export default function BalancesPage() {
                                         ))}
                                     </Bar>
                                     <Bar yAxisId="bars" dataKey="spent" name="Spent (out)" fill="#ef4444" fillOpacity={0.55} />
-                                    <Line yAxisId="line" type="monotone" dataKey="cumulative" name="Cumulative Balance" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                                    <Line type="monotone" dataKey="cumulative" name="Cumulative Balance" stroke="#6366f1" strokeWidth={2.5} dot={false} />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         </ChartFrame>
@@ -300,8 +300,8 @@ export default function BalancesPage() {
                                                 <ComposedChart data={p.series} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
                                                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} angle={-45} textAnchor="end" height={50} />
-                                                    <YAxis yAxisId="line" tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
-                                                    <YAxis yAxisId="bars" hide domain={barDomain} />
+                                                    <YAxis tickFormatter={formatAxisValue} tick={{ fontSize: 10, fill: "#71717a" }} width={70} />
+                                                    <YAxis yAxisId="bars" hide orientation="right" domain={barDomain} />
                                                     <Tooltip content={<BalanceTooltip />} />
                                                     <Bar yAxisId="bars" dataKey="netPosition" name="Net Position">
                                                         {p.series.map((d, idx) => (
@@ -310,7 +310,6 @@ export default function BalancesPage() {
                                                     </Bar>
                                                     <Bar yAxisId="bars" dataKey="spent" name="Spent" fill="#ef4444" fillOpacity={0.55} />
                                                     <Line
-                                                        yAxisId="line"
                                                         type="monotone"
                                                         dataKey="cumulative"
                                                         name="Cumulative"
