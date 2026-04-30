@@ -11,6 +11,7 @@ const NAV_ITEMS = [
     { href: "/cashflow", label: "Cash Flow" },
     { href: "/received", label: "Received Amounts" },
     { href: "/balances", label: "Balances" },
+    { href: "/tables", label: "Tables" },
     { href: "/study", label: "Study" },
     { href: "/issues", label: "Issues" },
     { href: "/upload", label: "Upload" },
