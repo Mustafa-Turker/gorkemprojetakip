@@ -52,16 +52,31 @@ export async function GET() {
             GROUP BY yr, project
         `;
 
-        const [cost, spent, received] = await Promise.all([
+        // Cost detail at kategori_lvl_2 granularity for the deep-breakdown table.
+        const costDetailSql = `
+            SELECT
+                rapor_yili::int AS yr,
+                proje_kodu AS project,
+                source,
+                kategori_lvl_1 AS l1,
+                kategori_lvl_2 AS l2,
+                SUM(-1 * toplam_tutar)::float8 AS amount
+            FROM public.view_proje_maliyet_ozeti
+            GROUP BY yr, project, source, l1, l2
+        `;
+
+        const [cost, spent, received, costDetail] = await Promise.all([
             query(costSql),
             query(spentSql),
             query(receivedSql),
+            query(costDetailSql),
         ]);
 
         return NextResponse.json({
             cost: cost.rows,
             spent: spent.rows,
             received: received.rows,
+            costDetail: costDetail.rows,
         });
     } catch (error) {
         console.error("tables/summary GET error:", error);
