@@ -169,6 +169,40 @@ export default function TablesPage() {
         const list = isAllYears2 ? allYears : allYears.filter((y) => yearAllowed2!.has(y));
         return [...list].reverse();
     }, [allYears, isAllYears2, yearAllowed2]);
+
+    // Excel export of all three project-level tables together
+    const [downloadingProject, setDownloadingProject] = useState(false);
+    const downloadProjectTables = async () => {
+        if (downloadingProject) return;
+        if (!projectBreakdown || !projectCostDetail || !receivedList) return;
+        setDownloadingProject(true);
+        try {
+            const { downloadProjectTablesExcel } = await import("./project-tables-excel");
+            const yearLabel = isAllYears2 ? "All Years" : selectedYears2.slice().sort((a, b) => a - b).join(", ");
+            const projectDesc =
+                selectedProject2 === "__ALL__"
+                    ? "All Projects Combined"
+                    : PROJECT_META[selectedProject2]?.desc || selectedProject2;
+            await downloadProjectTablesExcel({
+                projectCode: selectedProject2,
+                projectDesc,
+                yearLabel,
+                years: effectiveYears2,
+                breakdown: { yearMap: projectBreakdown.yearMap, total: projectBreakdown.total },
+                detail: { sections: projectCostDetail.sections },
+                received: {
+                    items: receivedList.items,
+                    total: receivedList.total,
+                    totalsByYear: receivedList.totalsByYear,
+                },
+            });
+        } catch (e) {
+            console.error("Excel export failed:", e);
+            alert("Excel export failed");
+        } finally {
+            setDownloadingProject(false);
+        }
+    };
     const yearAllowed = useMemo(() => {
         if (isAllYears) return null;
         return new Set(selectedYears);
@@ -593,6 +627,8 @@ export default function TablesPage() {
                         onYearsChange={setSelectedYears2}
                         breakdown={projectBreakdown}
                         years={effectiveYears2}
+                        onDownload={downloadProjectTables}
+                        downloading={downloadingProject}
                     />
                 )}
 
@@ -611,6 +647,8 @@ export default function TablesPage() {
                         yearOptions={allYears}
                         selectedYears={selectedYears2}
                         onYearsChange={setSelectedYears2}
+                        onDownload={downloadProjectTables}
+                        downloading={downloadingProject}
                     />
                 )}
 
@@ -629,6 +667,8 @@ export default function TablesPage() {
                         yearOptions={allYears}
                         selectedYears={selectedYears2}
                         onYearsChange={setSelectedYears2}
+                        onDownload={downloadProjectTables}
+                        downloading={downloadingProject}
                     />
                 )}
             </main>
@@ -718,6 +758,8 @@ interface ProjectCostBreakdownTableProps {
     onYearsChange: (years: number[]) => void;
     breakdown: { yearMap: Record<number, YearBlock>; years: number[]; total: YearBlock };
     years: number[];
+    onDownload?: () => void | Promise<void>;
+    downloading?: boolean;
 }
 
 const EMPTY_YEAR_BLOCK: YearBlock = {
@@ -735,6 +777,8 @@ function ProjectCostBreakdownTable({
     onYearsChange,
     breakdown,
     years: displayYears,
+    onDownload,
+    downloading,
 }: ProjectCostBreakdownTableProps) {
     const { yearMap, total } = breakdown;
     // Column groups: TOTAL + each year (driven by displayYears, with empty
@@ -826,6 +870,8 @@ function ProjectCostBreakdownTable({
                     yearOptions={yearOptions}
                     selectedYears={selectedYears}
                     onYearsChange={onYearsChange}
+                    onDownload={onDownload}
+                    downloading={downloading}
                 />
             </div>
 
@@ -919,6 +965,8 @@ interface DetailedCostBreakdownTableProps {
     yearOptions: number[];
     selectedYears: number[];
     onYearsChange: (years: number[]) => void;
+    onDownload?: () => void | Promise<void>;
+    downloading?: boolean;
 }
 
 const SECTION_TOTAL_LABEL: Record<string, string> = {
@@ -939,6 +987,8 @@ function DetailedCostBreakdownTable({
     yearOptions,
     selectedYears,
     onYearsChange,
+    onDownload,
+    downloading,
 }: DetailedCostBreakdownTableProps) {
     const { sections } = detail;
     const years = displayYears;
@@ -1003,6 +1053,8 @@ function DetailedCostBreakdownTable({
                     yearOptions={yearOptions}
                     selectedYears={selectedYears}
                     onYearsChange={onYearsChange}
+                    onDownload={onDownload}
+                    downloading={downloading}
                 />
             </div>
 
@@ -1111,6 +1163,8 @@ interface ReceivedItemsTableProps {
     yearOptions: number[];
     selectedYears: number[];
     onYearsChange: (years: number[]) => void;
+    onDownload?: () => void | Promise<void>;
+    downloading?: boolean;
 }
 
 function ReceivedItemsTable({
@@ -1123,6 +1177,8 @@ function ReceivedItemsTable({
     yearOptions,
     selectedYears,
     onYearsChange,
+    onDownload,
+    downloading,
 }: ReceivedItemsTableProps) {
     const { items, total, totalsByYear } = list;
     const years = displayYears;
@@ -1171,6 +1227,8 @@ function ReceivedItemsTable({
                     yearOptions={yearOptions}
                     selectedYears={selectedYears}
                     onYearsChange={onYearsChange}
+                    onDownload={onDownload}
+                    downloading={downloading}
                 />
             </div>
 
@@ -1316,6 +1374,8 @@ interface ProjectYearFiltersProps {
     yearOptions: number[];
     selectedYears: number[];
     onYearsChange: (years: number[]) => void;
+    onDownload?: () => void | Promise<void>;
+    downloading?: boolean;
 }
 
 function ProjectYearFilters({
@@ -1325,6 +1385,8 @@ function ProjectYearFilters({
     yearOptions,
     selectedYears,
     onYearsChange,
+    onDownload,
+    downloading,
 }: ProjectYearFiltersProps) {
     return (
         <div className="flex items-center gap-3 flex-wrap">
@@ -1357,6 +1419,19 @@ function ProjectYearFilters({
                     />
                 </div>
             </div>
+            {onDownload && (
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onDownload()}
+                    disabled={!!downloading}
+                    className="gap-1.5"
+                    title="Download all 3 tables as Excel"
+                >
+                    {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+                    Excel
+                </Button>
+            )}
         </div>
     );
 }
