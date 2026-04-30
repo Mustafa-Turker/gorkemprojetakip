@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -164,10 +164,10 @@ export default function TablesPage() {
 
     // Years to render as columns in tables 2/3/4 — derived from the global year
     // list so 2026 (or any year that exists anywhere in the data) shows up even
-    // when the current table has no rows for it.
+    // when the current table has no rows for it. Reversed so newest is first.
     const effectiveYears2 = useMemo(() => {
-        if (isAllYears2) return allYears;
-        return allYears.filter((y) => yearAllowed2!.has(y));
+        const list = isAllYears2 ? allYears : allYears.filter((y) => yearAllowed2!.has(y));
+        return [...list].reverse();
     }, [allYears, isAllYears2, yearAllowed2]);
     const yearAllowed = useMemo(() => {
         if (isAllYears) return null;
@@ -606,6 +606,11 @@ export default function TablesPage() {
                         }
                         detail={projectCostDetail}
                         years={effectiveYears2}
+                        projectOptions={Object.keys(PROJECT_META)}
+                        onProjectChange={setSelectedProject2}
+                        yearOptions={allYears}
+                        selectedYears={selectedYears2}
+                        onYearsChange={setSelectedYears2}
                     />
                 )}
 
@@ -619,6 +624,11 @@ export default function TablesPage() {
                         }
                         list={receivedList}
                         years={effectiveYears2}
+                        projectOptions={Object.keys(PROJECT_META)}
+                        onProjectChange={setSelectedProject2}
+                        yearOptions={allYears}
+                        selectedYears={selectedYears2}
+                        onYearsChange={setSelectedYears2}
                     />
                 )}
             </main>
@@ -809,40 +819,17 @@ function ProjectCostBreakdownTable({
                         {" — direct costs, indirect costs, and ratios"}
                     </p>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Project</span>
-                        <Select value={projectCode} onValueChange={onProjectChange}>
-                            <SelectTrigger className="w-[260px] h-8 text-xs">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__ALL__">
-                                    <span className="font-semibold">All Projects Combined</span>
-                                </SelectItem>
-                                {projectOptions.map((code) => (
-                                    <SelectItem key={code} value={code}>
-                                        {PROJECT_META[code]?.desc || code} <span className="text-zinc-400 text-[10px] ml-1">({code})</span>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Year</span>
-                        <div className="w-[180px]">
-                            <CompactMultiSelect
-                                options={yearOptions.map((y) => ({ label: String(y), value: String(y) }))}
-                                selected={selectedYears.map((y) => String(y))}
-                                onChange={(vals) => onYearsChange(vals.map(Number))}
-                                placeholder="ALL Years"
-                            />
-                        </div>
-                    </div>
-                </div>
+                <ProjectYearFilters
+                    projectCode={projectCode}
+                    projectOptions={projectOptions}
+                    onProjectChange={onProjectChange}
+                    yearOptions={yearOptions}
+                    selectedYears={selectedYears}
+                    onYearsChange={onYearsChange}
+                />
             </div>
 
-            <div className="overflow-auto">
+            <TopScrollSync maxHeight="560px">
                 <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
                     <thead>
                         <tr>
@@ -910,7 +897,7 @@ function ProjectCostBreakdownTable({
                         })}
                     </tbody>
                 </table>
-            </div>
+            </TopScrollSync>
         </section>
     );
 }
@@ -927,6 +914,11 @@ interface DetailedCostBreakdownTableProps {
         years: number[];
     };
     years: number[];
+    projectOptions: string[];
+    onProjectChange: (code: string) => void;
+    yearOptions: number[];
+    selectedYears: number[];
+    onYearsChange: (years: number[]) => void;
 }
 
 const SECTION_TOTAL_LABEL: Record<string, string> = {
@@ -942,6 +934,11 @@ function DetailedCostBreakdownTable({
     projectDesc,
     detail,
     years: displayYears,
+    projectOptions,
+    onProjectChange,
+    yearOptions,
+    selectedYears,
+    onYearsChange,
 }: DetailedCostBreakdownTableProps) {
     const { sections } = detail;
     const years = displayYears;
@@ -990,16 +987,26 @@ function DetailedCostBreakdownTable({
 
     return (
         <section className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60">
-                <h2 className="text-base font-semibold">Detailed Breakdown of Costs</h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {projectDesc}
-                    {projectCode !== "__ALL__" && <span className="text-zinc-400"> ({projectCode})</span>}
-                    {" — every kategori_lvl_2 grouped by main category, with section totals. Uses the project and year selectors above."}
-                </p>
+            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60 flex flex-wrap items-center gap-3 justify-between">
+                <div>
+                    <h2 className="text-base font-semibold">Detailed Breakdown of Costs</h2>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        {projectDesc}
+                        {projectCode !== "__ALL__" && <span className="text-zinc-400"> ({projectCode})</span>}
+                        {" — every kategori_lvl_2 grouped by main category, with section totals."}
+                    </p>
+                </div>
+                <ProjectYearFilters
+                    projectCode={projectCode}
+                    projectOptions={projectOptions}
+                    onProjectChange={onProjectChange}
+                    yearOptions={yearOptions}
+                    selectedYears={selectedYears}
+                    onYearsChange={onYearsChange}
+                />
             </div>
 
-            <div className="overflow-auto max-h-[680px]">
+            <TopScrollSync maxHeight="680px">
                 <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
                     <thead>
                         <tr>
@@ -1084,7 +1091,7 @@ function DetailedCostBreakdownTable({
                         )}
                     </tbody>
                 </table>
-            </div>
+            </TopScrollSync>
         </section>
     );
 }
@@ -1099,6 +1106,11 @@ interface ReceivedItemsTableProps {
         totalsByYear: Record<number, number>;
     };
     years: number[];
+    projectOptions: string[];
+    onProjectChange: (code: string) => void;
+    yearOptions: number[];
+    selectedYears: number[];
+    onYearsChange: (years: number[]) => void;
 }
 
 function ReceivedItemsTable({
@@ -1106,44 +1118,101 @@ function ReceivedItemsTable({
     projectDesc,
     list,
     years: displayYears,
+    projectOptions,
+    onProjectChange,
+    yearOptions,
+    selectedYears,
+    onYearsChange,
 }: ReceivedItemsTableProps) {
     const { items, total, totalsByYear } = list;
     const years = displayYears;
     const isAll = projectCode === "__ALL__";
-    const cellBorder = "border-r border-zinc-200 dark:border-zinc-800";
     const cellGroupBorder = "border-r border-zinc-300 dark:border-zinc-700";
-    const fixedCols = 5 + (isAll ? 1 : 0); // Date, Desc, CP, Type, [Project], Amount, Cur, Rate, TOTAL
+
+    // Cumulative left offsets for sticky non-year columns. All non-year columns
+    // are frozen — only year columns scroll horizontally.
+    const COLS = [
+        { key: "date", width: 80 },
+        { key: "description", width: 200 },
+        { key: "counter_party", width: 90 },
+        { key: "type", width: 72 },
+        ...(isAll ? [{ key: "project", width: 64 }] : []),
+        { key: "amount", width: 96 },
+        { key: "currency", width: 44 },
+        { key: "rate", width: 64 },
+        { key: "total", width: 100 },
+    ];
+    const offsets = COLS.reduce<number[]>((acc, _c, i) => {
+        acc.push(i === 0 ? 0 : acc[i - 1] + COLS[i - 1].width);
+        return acc;
+    }, []);
+    const colByKey = (key: string) => {
+        const idx = COLS.findIndex((c) => c.key === key);
+        return { idx, left: offsets[idx], width: COLS[idx].width };
+    };
+    const fixedCols = COLS.length;
+    const totalFixedWidth = offsets[offsets.length - 1] + COLS[COLS.length - 1].width;
 
     return (
         <section className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60">
-                <h2 className="text-base font-semibold">Received Amounts (Chronological)</h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {projectDesc}
-                    {!isAll && <span className="text-zinc-400"> ({projectCode})</span>}
-                    {" — every cash_flow entry by date (excludes internal ANK↔BAG transfers). Uses the project and year selectors above."}
-                </p>
+            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60 flex flex-wrap items-center gap-3 justify-between">
+                <div>
+                    <h2 className="text-base font-semibold">Received Amounts (Chronological)</h2>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        {projectDesc}
+                        {!isAll && <span className="text-zinc-400"> ({projectCode})</span>}
+                        {" — every cash_flow entry by date (excludes internal ANK↔BAG transfers)."}
+                    </p>
+                </div>
+                <ProjectYearFilters
+                    projectCode={projectCode}
+                    projectOptions={projectOptions}
+                    onProjectChange={onProjectChange}
+                    yearOptions={yearOptions}
+                    selectedYears={selectedYears}
+                    onYearsChange={onYearsChange}
+                />
             </div>
 
-            <div className="overflow-auto max-h-[560px]">
-                <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
+            <TopScrollSync maxHeight="560px">
+                <table className="text-[11px] tabular-nums leading-tight border-separate border-spacing-0" style={{ minWidth: totalFixedWidth + years.length * 100 }}>
                     <thead>
                         <tr>
-                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[80px] min-w-[80px] max-w-[80px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Date</th>
-                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[80px] top-0 z-50 w-[180px] min-w-[180px] max-w-[180px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
-                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[80px] min-w-[80px] max-w-[80px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Counter Pt.</th>
-                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[68px] min-w-[68px] max-w-[68px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Type</th>
-                            {isAll && (
-                                <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[60px] min-w-[60px] max-w-[60px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
-                            )}
-                            <th className="text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[96px] min-w-[96px] max-w-[96px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Amount</th>
-                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[40px] min-w-[40px] max-w-[40px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Cur.</th>
-                            <th className="text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[64px] min-w-[64px] max-w-[64px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Rate</th>
-                            <th className="text-right px-1.5 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 w-[100px] min-w-[100px] max-w-[100px] bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL (USD)</th>
+                            {COLS.map((col, i) => {
+                                const isTotalCol = col.key === "total";
+                                const headerBg = isTotalCol
+                                    ? "bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900"
+                                    : "bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900";
+                                const textColor = isTotalCol
+                                    ? "text-emerald-700 dark:text-emerald-200"
+                                    : "text-zinc-700 dark:text-zinc-200";
+                                const align = ["amount", "rate", "total"].includes(col.key) ? "text-right" : "text-left";
+                                const label = {
+                                    date: "Date",
+                                    description: "Description",
+                                    counter_party: "Counter Pt.",
+                                    type: "Type",
+                                    project: "Project",
+                                    amount: "Amount",
+                                    currency: "Cur.",
+                                    rate: "Rate",
+                                    total: "TOTAL (USD)",
+                                }[col.key];
+                                return (
+                                    <th
+                                        key={col.key}
+                                        className={`${align} px-1.5 h-[28px] font-medium ${textColor} sticky top-0 z-50 ${headerBg} border-r border-b border-zinc-300 dark:border-zinc-700`}
+                                        style={{ left: offsets[i], width: col.width, minWidth: col.width, maxWidth: col.width }}
+                                    >
+                                        {label}
+                                    </th>
+                                );
+                            })}
                             {years.map((y, idx) => (
                                 <th
                                     key={y}
-                                    className={`text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[100px] min-w-[100px] max-w-[100px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 ${idx === years.length - 1 ? "" : cellGroupBorder}`}
+                                    className={`text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 ${idx === years.length - 1 ? "" : cellGroupBorder}`}
+                                    style={{ width: 100, minWidth: 100, maxWidth: 100 }}
                                 >
                                     {y}
                                 </th>
@@ -1159,23 +1228,36 @@ function ReceivedItemsTable({
                             const origAmt = Number(r.original_amount || 0);
                             const rate = Number(r.currency_rate || 0);
                             const amtColor = amt < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400";
+                            const stickyTd = (key: string, content: React.ReactNode, opts: { align?: "left" | "right"; nowrap?: boolean; truncate?: boolean; titleAttr?: string; className?: string } = {}) => {
+                                const c = colByKey(key);
+                                const align = opts.align === "right" ? "text-right" : "text-left";
+                                return (
+                                    <td
+                                        key={key}
+                                        title={opts.titleAttr}
+                                        className={`${align} px-1.5 h-[24px] sticky z-10 ${rowBg} border-r border-b border-zinc-200 dark:border-zinc-800 ${opts.nowrap ? "whitespace-nowrap" : ""} ${opts.truncate ? "truncate" : ""} ${opts.className || ""}`}
+                                        style={{ left: c.left, width: c.width, minWidth: c.width, maxWidth: c.width }}
+                                    >
+                                        {content}
+                                    </td>
+                                );
+                            };
                             return (
                                 <tr key={r.id}>
-                                    <td className={`px-1.5 h-[24px] sticky left-0 z-10 w-[80px] min-w-[80px] max-w-[80px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 whitespace-nowrap`}>{dateStr}</td>
-                                    <td className={`px-1.5 h-[24px] sticky left-[80px] z-10 w-[180px] min-w-[180px] max-w-[180px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate`} title={r.description || ""}>{r.description || "-"}</td>
-                                    <td className={`px-1.5 h-[24px] w-[80px] min-w-[80px] max-w-[80px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`} title={r.counter_party}>{r.counter_party || "-"}</td>
-                                    <td className={`px-1.5 h-[24px] w-[68px] min-w-[68px] max-w-[68px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`} title={r.type}>{r.type}{r.is_exchange ? <span className="ml-0.5 text-[9px] text-amber-600">FX</span> : null}</td>
-                                    {isAll && (
-                                        <td className={`px-1.5 h-[24px] w-[60px] min-w-[60px] max-w-[60px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`}>{r.project}</td>
-                                    )}
-                                    <td className={`text-right px-1.5 h-[24px] w-[96px] min-w-[96px] max-w-[96px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-b ${cellBorder} whitespace-nowrap`}>{fmt(origAmt)}</td>
-                                    <td className={`px-1.5 h-[24px] w-[40px] min-w-[40px] max-w-[40px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.currency || "-"}</td>
-                                    <td className={`text-right px-1.5 h-[24px] w-[64px] min-w-[64px] max-w-[64px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} whitespace-nowrap`}>{rate ? rate.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "-"}</td>
-                                    <td className={`text-right px-1.5 h-[24px] w-[100px] min-w-[100px] max-w-[100px] ${rowBg} font-semibold ${amtColor} border-b ${cellBorder}`}>{fmt(amt)}</td>
+                                    {stickyTd("date", dateStr, { nowrap: true, className: "text-zinc-700 dark:text-zinc-300" })}
+                                    {stickyTd("description", r.description || "-", { truncate: true, titleAttr: r.description || "", className: "text-zinc-700 dark:text-zinc-300" })}
+                                    {stickyTd("counter_party", r.counter_party || "-", { truncate: true, titleAttr: r.counter_party, className: "text-zinc-600 dark:text-zinc-400" })}
+                                    {stickyTd("type", <>{r.type}{r.is_exchange ? <span className="ml-0.5 text-[9px] text-amber-600">FX</span> : null}</>, { truncate: true, titleAttr: r.type, className: "text-zinc-600 dark:text-zinc-400" })}
+                                    {isAll && stickyTd("project", r.project, { truncate: true, className: "text-zinc-600 dark:text-zinc-400" })}
+                                    {stickyTd("amount", fmt(origAmt), { align: "right", nowrap: true, className: "text-zinc-700 dark:text-zinc-300" })}
+                                    {stickyTd("currency", r.currency || "-", { className: "text-zinc-600 dark:text-zinc-400" })}
+                                    {stickyTd("rate", rate ? rate.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "-", { align: "right", nowrap: true, className: "text-zinc-600 dark:text-zinc-400" })}
+                                    {stickyTd("total", fmt(amt), { align: "right", className: `font-semibold ${amtColor}` })}
                                     {years.map((y, yi) => (
                                         <td
                                             key={y}
-                                            className={`text-right px-1.5 h-[24px] w-[100px] min-w-[100px] max-w-[100px] ${rowBg} border-b border-zinc-200 dark:border-zinc-800 ${yi === years.length - 1 ? "" : cellGroupBorder} ${y === r.yr ? amtColor : "text-zinc-300 dark:text-zinc-700"}`}
+                                            className={`text-right px-1.5 h-[24px] ${rowBg} border-b border-zinc-200 dark:border-zinc-800 ${yi === years.length - 1 ? "" : cellGroupBorder} ${y === r.yr ? amtColor : "text-zinc-300 dark:text-zinc-700"}`}
+                                            style={{ width: 100, minWidth: 100, maxWidth: 100 }}
                                         >
                                             {y === r.yr ? fmt(amt) : "·"}
                                         </td>
@@ -1185,7 +1267,7 @@ function ReceivedItemsTable({
                         })}
                         {items.length === 0 && (
                             <tr>
-                                <td colSpan={fixedCols + 3 + years.length} className="text-center py-12 text-zinc-500">
+                                <td colSpan={fixedCols + years.length} className="text-center py-12 text-zinc-500">
                                     No received entries for the selected project / years
                                 </td>
                             </tr>
@@ -1194,12 +1276,24 @@ function ReceivedItemsTable({
                     {items.length > 0 && (
                         <tfoot>
                             <tr className="font-bold text-emerald-700 dark:text-emerald-300">
-                                <td colSpan={fixedCols + 2} className="px-1.5 h-[26px] sticky left-0 bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
-                                <td className="text-right px-1.5 h-[26px] w-[100px] min-w-[100px] max-w-[100px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">{fmt(total)}</td>
+                                <td
+                                    colSpan={fixedCols - 1}
+                                    className="px-1.5 h-[26px] sticky left-0 bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700"
+                                    style={{ width: totalFixedWidth - COLS[COLS.length - 1].width, minWidth: totalFixedWidth - COLS[COLS.length - 1].width }}
+                                >
+                                    TOTAL
+                                </td>
+                                <td
+                                    className="text-right px-1.5 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700"
+                                    style={{ left: offsets[offsets.length - 1], width: COLS[COLS.length - 1].width, minWidth: COLS[COLS.length - 1].width, maxWidth: COLS[COLS.length - 1].width, position: "sticky" }}
+                                >
+                                    {fmt(total)}
+                                </td>
                                 {years.map((y, yi) => (
                                     <td
                                         key={y}
-                                        className={`text-right px-1.5 h-[26px] w-[100px] min-w-[100px] max-w-[100px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-t border-zinc-300 dark:border-zinc-700 ${yi === years.length - 1 ? "" : cellGroupBorder}`}
+                                        className={`text-right px-1.5 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-t border-zinc-300 dark:border-zinc-700 ${yi === years.length - 1 ? "" : cellGroupBorder}`}
+                                        style={{ width: 100, minWidth: 100, maxWidth: 100 }}
                                     >
                                         {fmt(totalsByYear[y] || 0)}
                                     </td>
@@ -1208,7 +1302,126 @@ function ReceivedItemsTable({
                         </tfoot>
                     )}
                 </table>
-            </div>
+            </TopScrollSync>
         </section>
+    );
+}
+
+// ---------- Shared filter UI ----------
+
+interface ProjectYearFiltersProps {
+    projectCode: string;
+    projectOptions: string[];
+    onProjectChange: (code: string) => void;
+    yearOptions: number[];
+    selectedYears: number[];
+    onYearsChange: (years: number[]) => void;
+}
+
+function ProjectYearFilters({
+    projectCode,
+    projectOptions,
+    onProjectChange,
+    yearOptions,
+    selectedYears,
+    onYearsChange,
+}: ProjectYearFiltersProps) {
+    return (
+        <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Project</span>
+                <Select value={projectCode} onValueChange={onProjectChange}>
+                    <SelectTrigger className="w-[260px] h-8 text-xs">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__ALL__">
+                            <span className="font-semibold">All Projects Combined</span>
+                        </SelectItem>
+                        {projectOptions.map((code) => (
+                            <SelectItem key={code} value={code}>
+                                {PROJECT_META[code]?.desc || code} <span className="text-zinc-400 text-[10px] ml-1">({code})</span>
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Year</span>
+                <div className="w-[180px]">
+                    <CompactMultiSelect
+                        options={yearOptions.map((y) => ({ label: String(y), value: String(y) }))}
+                        selected={selectedYears.map((y) => String(y))}
+                        onChange={(vals) => onYearsChange(vals.map(Number))}
+                        placeholder="ALL Years"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ---------- Top horizontal scrollbar that mirrors a scrollable container below it ----------
+
+interface TopScrollSyncProps {
+    children: React.ReactNode;
+    maxHeight?: string;
+    /** Optional className for the main scroll wrapper. */
+    className?: string;
+}
+
+function TopScrollSync({ children, maxHeight = "560px", className = "" }: TopScrollSyncProps) {
+    const topRef = useRef<HTMLDivElement>(null);
+    const mainRef = useRef<HTMLDivElement>(null);
+    const syncingRef = useRef(false);
+    const [contentWidth, setContentWidth] = useState(0);
+
+    useEffect(() => {
+        const main = mainRef.current;
+        if (!main) return;
+        const update = () => {
+            const tbl = main.querySelector("table");
+            if (tbl) setContentWidth(tbl.scrollWidth);
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(main);
+        const tbl = main.querySelector("table");
+        if (tbl) ro.observe(tbl);
+        return () => ro.disconnect();
+    }, [children]);
+
+    const onTopScroll = () => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        if (mainRef.current && topRef.current) mainRef.current.scrollLeft = topRef.current.scrollLeft;
+        syncingRef.current = false;
+    };
+    const onMainScroll = () => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        if (mainRef.current && topRef.current) topRef.current.scrollLeft = mainRef.current.scrollLeft;
+        syncingRef.current = false;
+    };
+
+    return (
+        <>
+            <div
+                ref={topRef}
+                onScroll={onTopScroll}
+                className="overflow-x-auto overflow-y-hidden border-b border-zinc-200 dark:border-zinc-800"
+                style={{ height: 12 }}
+            >
+                <div style={{ width: contentWidth || 1, height: 1 }} />
+            </div>
+            <div
+                ref={mainRef}
+                onScroll={onMainScroll}
+                className={`overflow-auto ${className}`}
+                style={{ maxHeight }}
+            >
+                {children}
+            </div>
+        </>
     );
 }
