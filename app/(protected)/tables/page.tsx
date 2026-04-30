@@ -80,7 +80,10 @@ interface ReceivedItemRow {
     category: string | null;
     is_exchange: boolean;
     project: string;
-    amount: number;
+    original_amount: number;
+    currency: string;
+    currency_rate: number;
+    amount: number; // usd_equal
     yr: number;
 }
 
@@ -158,6 +161,14 @@ export default function TablesPage() {
         () => (isAllYears2 ? null : new Set(selectedYears2)),
         [isAllYears2, selectedYears2]
     );
+
+    // Years to render as columns in tables 2/3/4 — derived from the global year
+    // list so 2026 (or any year that exists anywhere in the data) shows up even
+    // when the current table has no rows for it.
+    const effectiveYears2 = useMemo(() => {
+        if (isAllYears2) return allYears;
+        return allYears.filter((y) => yearAllowed2!.has(y));
+    }, [allYears, isAllYears2, yearAllowed2]);
     const yearAllowed = useMemo(() => {
         if (isAllYears) return null;
         return new Set(selectedYears);
@@ -572,6 +583,7 @@ export default function TablesPage() {
                         selectedYears={selectedYears2}
                         onYearsChange={setSelectedYears2}
                         breakdown={projectBreakdown}
+                        years={effectiveYears2}
                     />
                 )}
 
@@ -584,6 +596,7 @@ export default function TablesPage() {
                                 : PROJECT_META[selectedProject2]?.desc || selectedProject2
                         }
                         detail={projectCostDetail}
+                        years={effectiveYears2}
                     />
                 )}
 
@@ -596,6 +609,7 @@ export default function TablesPage() {
                                 : PROJECT_META[selectedProject2]?.desc || selectedProject2
                         }
                         list={receivedList}
+                        years={effectiveYears2}
                     />
                 )}
             </main>
@@ -684,7 +698,13 @@ interface ProjectCostBreakdownTableProps {
     selectedYears: number[];
     onYearsChange: (years: number[]) => void;
     breakdown: { yearMap: Record<number, YearBlock>; years: number[]; total: YearBlock };
+    years: number[];
 }
+
+const EMPTY_YEAR_BLOCK: YearBlock = {
+    ANK: { material: 0, labour: 0, subcontractor: 0, unclassified: 0, common: 0, general: 0 },
+    BAG: { material: 0, labour: 0, subcontractor: 0, unclassified: 0, common: 0, general: 0 },
+};
 
 function ProjectCostBreakdownTable({
     projectCode,
@@ -695,12 +715,14 @@ function ProjectCostBreakdownTable({
     selectedYears,
     onYearsChange,
     breakdown,
+    years: displayYears,
 }: ProjectCostBreakdownTableProps) {
-    const { yearMap, years, total } = breakdown;
-    // Column groups: TOTAL + each year
+    const { yearMap, total } = breakdown;
+    // Column groups: TOTAL + each year (driven by displayYears, with empty
+    // fallback when the project has no data for a given year).
     const groups: { label: string; block: YearBlock }[] = [
         { label: "TOTAL", block: total },
-        ...years.map((y) => ({ label: String(y), block: yearMap[y] })),
+        ...displayYears.map((y) => ({ label: String(y), block: yearMap[y] || EMPTY_YEAR_BLOCK })),
     ];
 
     // Each row of body: { label, getValue: (block) -> {ank: number; bag: number}, kind }
@@ -895,6 +917,7 @@ interface DetailedCostBreakdownTableProps {
         }[];
         years: number[];
     };
+    years: number[];
 }
 
 const SECTION_TOTAL_LABEL: Record<string, string> = {
@@ -909,8 +932,10 @@ function DetailedCostBreakdownTable({
     projectCode,
     projectDesc,
     detail,
+    years: displayYears,
 }: DetailedCostBreakdownTableProps) {
-    const { sections, years } = detail;
+    const { sections } = detail;
+    const years = displayYears;
     // Column groups: TOTAL + each year (each is HEAD/BAG pair)
     const groups = [
         { label: "TOTAL", isTotal: true },
@@ -1064,17 +1089,21 @@ interface ReceivedItemsTableProps {
         total: number;
         totalsByYear: Record<number, number>;
     };
+    years: number[];
 }
 
 function ReceivedItemsTable({
     projectCode,
     projectDesc,
     list,
+    years: displayYears,
 }: ReceivedItemsTableProps) {
-    const { items, years, total, totalsByYear } = list;
+    const { items, total, totalsByYear } = list;
+    const years = displayYears;
     const isAll = projectCode === "__ALL__";
     const cellBorder = "border-r border-zinc-200 dark:border-zinc-800";
     const cellGroupBorder = "border-r border-zinc-300 dark:border-zinc-700";
+    const fixedCols = 5 + (isAll ? 1 : 0); // Date, Desc, CP, Type, [Project], Amount, Cur, Rate, TOTAL
 
     return (
         <section className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
@@ -1092,13 +1121,16 @@ function ReceivedItemsTable({
                     <thead>
                         <tr>
                             <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[88px] min-w-[88px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Date</th>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[88px] top-0 z-50 w-[260px] min-w-[260px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[88px] top-0 z-50 w-[240px] min-w-[240px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
                             <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Counter Party</th>
                             <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Type</th>
                             {isAll && (
                                 <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
                             )}
-                            <th className="text-right px-2 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL</th>
+                            <th className="text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Amount</th>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Cur.</th>
+                            <th className="text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Rate</th>
+                            <th className="text-right px-2 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL (USD)</th>
                             {years.map((y, idx) => (
                                 <th
                                     key={y}
@@ -1115,16 +1147,21 @@ function ReceivedItemsTable({
                             const rowBg = isAlt ? "bg-zinc-50 dark:bg-zinc-900/40" : "bg-white dark:bg-zinc-900";
                             const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
                             const amt = Number(r.amount || 0);
+                            const origAmt = Number(r.original_amount || 0);
+                            const rate = Number(r.currency_rate || 0);
                             const amtColor = amt < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400";
                             return (
                                 <tr key={r.id}>
                                     <td className={`px-2 h-[24px] sticky left-0 z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 whitespace-nowrap`}>{dateStr}</td>
-                                    <td className={`px-2 h-[24px] sticky left-[88px] z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate max-w-[260px]`} title={r.description || ""}>{r.description || "-"}</td>
+                                    <td className={`px-2 h-[24px] sticky left-[88px] z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate max-w-[240px]`} title={r.description || ""}>{r.description || "-"}</td>
                                     <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.counter_party || "-"}</td>
                                     <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.type}{r.is_exchange ? <span className="ml-1 text-[9px] text-amber-600">(FX)</span> : null}</td>
                                     {isAll && (
                                         <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.project}</td>
                                     )}
+                                    <td className={`text-right px-2 h-[24px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-b ${cellBorder} whitespace-nowrap`}>{fmt(origAmt)}</td>
+                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.currency || "-"}</td>
+                                    <td className={`text-right px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} whitespace-nowrap`}>{rate ? rate.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "-"}</td>
                                     <td className={`text-right px-2 h-[24px] ${rowBg} font-semibold ${amtColor} border-b ${cellBorder}`}>{fmt(amt)}</td>
                                     {years.map((y, yi) => (
                                         <td
@@ -1139,7 +1176,7 @@ function ReceivedItemsTable({
                         })}
                         {items.length === 0 && (
                             <tr>
-                                <td colSpan={5 + (isAll ? 1 : 0) + years.length} className="text-center py-12 text-zinc-500">
+                                <td colSpan={fixedCols + 3 + years.length} className="text-center py-12 text-zinc-500">
                                     No received entries for the selected project / years
                                 </td>
                             </tr>
@@ -1148,7 +1185,7 @@ function ReceivedItemsTable({
                     {items.length > 0 && (
                         <tfoot>
                             <tr className="font-bold text-emerald-700 dark:text-emerald-300">
-                                <td colSpan={4 + (isAll ? 1 : 0)} className="px-2 h-[26px] sticky left-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
+                                <td colSpan={fixedCols + 2} className="px-2 h-[26px] sticky left-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
                                 <td className="text-right px-2 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">{fmt(total)}</td>
                                 {years.map((y, yi) => (
                                     <td

@@ -77,6 +77,9 @@ export async function GET() {
                 category,
                 is_exchange,
                 COALESCE(NULLIF(project, ''), '(empty)') AS project,
+                amount::float8 AS original_amount,
+                currency,
+                currency_rate::float8 AS currency_rate,
                 usd_equal::float8 AS amount,
                 EXTRACT(YEAR FROM date)::int AS yr
             FROM public.cash_flow
