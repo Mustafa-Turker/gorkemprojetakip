@@ -1,12 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import useSWR from "swr";
 import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { CompactMultiSelect } from "@/components/ui/compact-multi-select";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -118,6 +125,15 @@ export default function TablesPage() {
     const [selectedYears, setSelectedYears] = useState<number[]>([]);
     const isAllYears = selectedYears.length === 0;
     const [downloading, setDownloading] = useState(false);
+
+    // Table 2 — project cost breakdown by year
+    const [selectedProject2, setSelectedProject2] = useState<string>("HQ");
+    const [selectedYears2, setSelectedYears2] = useState<number[]>([]);
+    const isAllYears2 = selectedYears2.length === 0;
+    const yearAllowed2 = useMemo(
+        () => (isAllYears2 ? null : new Set(selectedYears2)),
+        [isAllYears2, selectedYears2]
+    );
     const yearAllowed = useMemo(() => {
         if (isAllYears) return null;
         return new Set(selectedYears);
@@ -203,6 +219,74 @@ export default function TablesPage() {
             };
         });
     }, [data, yearAllowed]);
+
+    // Table 2 — per-(year, source) cost breakdown for the selected project
+    const projectBreakdown = useMemo(() => {
+        if (!data) return null;
+        type CatTotals = {
+            material: number;
+            labour: number;
+            subcontractor: number;
+            unclassified: number;
+            common: number;
+            general: number;
+        };
+        type YearBlock = { ANK: CatTotals; BAG: CatTotals };
+        const empty = (): CatTotals => ({
+            material: 0,
+            labour: 0,
+            subcontractor: 0,
+            unclassified: 0,
+            common: 0,
+            general: 0,
+        });
+
+        const yearMap: Record<number, YearBlock> = {};
+        const ensure = (yr: number, src: Source) => {
+            if (!yearMap[yr]) yearMap[yr] = { ANK: empty(), BAG: empty() };
+            return yearMap[yr][src];
+        };
+
+        data.cost.forEach((r) => {
+            if (r.project !== selectedProject2) return;
+            if (yearAllowed2 && !yearAllowed2.has(r.yr)) return;
+            if (r.source !== "ANK" && r.source !== "BAG") return;
+            const t = ensure(r.yr, r.source as Source);
+            switch (r.category) {
+                case "MATERIAL COST":
+                    t.material += r.amount;
+                    break;
+                case "LABOUR COST":
+                    t.labour += r.amount;
+                    break;
+                case "SUBCONTRACTOR":
+                    t.subcontractor += r.amount;
+                    break;
+                case "UNCLASSIFIED COST":
+                    t.unclassified += r.amount;
+                    break;
+                case "COMMON EXPENSES":
+                    t.common += r.amount;
+                    break;
+                case "GENERAL EXPENSES":
+                    t.general += r.amount;
+                    break;
+            }
+        });
+
+        const years = Object.keys(yearMap).map(Number).sort((a, b) => a - b);
+
+        // TOTAL across (selected) years
+        const total: YearBlock = { ANK: empty(), BAG: empty() };
+        years.forEach((yr) => {
+            (Object.keys(total.ANK) as (keyof CatTotals)[]).forEach((k) => {
+                total.ANK[k] += yearMap[yr].ANK[k];
+                total.BAG[k] += yearMap[yr].BAG[k];
+            });
+        });
+
+        return { yearMap, years, total };
+    }, [data, selectedProject2, yearAllowed2]);
 
     // Grand totals row
     const grand = useMemo(() => {
@@ -367,6 +451,19 @@ export default function TablesPage() {
                         </div>
                     </section>
                 )}
+
+                {!isLoading && !error && data && projectBreakdown && (
+                    <ProjectCostBreakdownTable
+                        projectCode={selectedProject2}
+                        projectDesc={PROJECT_META[selectedProject2]?.desc || selectedProject2}
+                        projectOptions={Object.keys(PROJECT_META)}
+                        onProjectChange={setSelectedProject2}
+                        yearOptions={allYears}
+                        selectedYears={selectedYears2}
+                        onYearsChange={setSelectedYears2}
+                        breakdown={projectBreakdown}
+                    />
+                )}
             </main>
         </div>
     );
@@ -417,5 +514,233 @@ function ProjectRows({ row, projIdx }: { row: ProjectRow; projIdx: number }) {
             {renderRow("ANK", true)}
             {renderRow("BAG", false)}
         </>
+    );
+}
+
+interface CatTotals {
+    material: number;
+    labour: number;
+    subcontractor: number;
+    unclassified: number;
+    common: number;
+    general: number;
+}
+interface YearBlock {
+    ANK: CatTotals;
+    BAG: CatTotals;
+}
+
+const subTotalDirect = (b: CatTotals) =>
+    b.material + b.labour + b.subcontractor + b.unclassified;
+const totalCost = (b: CatTotals) => subTotalDirect(b) + b.common + b.general;
+
+function fmtPct(num: number, den: number): string {
+    if (!den) return "-";
+    const p = (num / den) * 100;
+    if (!isFinite(p)) return "-";
+    return `${p.toFixed(1)}%`;
+}
+
+interface ProjectCostBreakdownTableProps {
+    projectCode: string;
+    projectDesc: string;
+    projectOptions: string[];
+    onProjectChange: (code: string) => void;
+    yearOptions: number[];
+    selectedYears: number[];
+    onYearsChange: (years: number[]) => void;
+    breakdown: { yearMap: Record<number, YearBlock>; years: number[]; total: YearBlock };
+}
+
+function ProjectCostBreakdownTable({
+    projectCode,
+    projectDesc,
+    projectOptions,
+    onProjectChange,
+    yearOptions,
+    selectedYears,
+    onYearsChange,
+    breakdown,
+}: ProjectCostBreakdownTableProps) {
+    const { yearMap, years, total } = breakdown;
+    // Column groups: TOTAL + each year
+    const groups: { label: string; block: YearBlock }[] = [
+        { label: "TOTAL", block: total },
+        ...years.map((y) => ({ label: String(y), block: yearMap[y] })),
+    ];
+
+    // Each row of body: { label, getValue: (block) -> {ank: number; bag: number}, kind }
+    type RowKind = "category" | "subtotal" | "total" | "ratio" | "spacer";
+    interface BodyRow {
+        label: string;
+        kind: RowKind;
+        get?: (b: YearBlock) => { ank: number | string; bag: number | string };
+    }
+    const bodyRows: BodyRow[] = [
+        { label: "TOTAL MATERIAL COST", kind: "category", get: (b) => ({ ank: b.ANK.material, bag: b.BAG.material }) },
+        { label: "TOTAL LABOUR COST", kind: "category", get: (b) => ({ ank: b.ANK.labour, bag: b.BAG.labour }) },
+        { label: "TOTAL SUB-CONTRACTOR COST", kind: "category", get: (b) => ({ ank: b.ANK.subcontractor, bag: b.BAG.subcontractor }) },
+        { label: "TOTAL UNCLASSIFIED COST", kind: "category", get: (b) => ({ ank: b.ANK.unclassified, bag: b.BAG.unclassified }) },
+        { label: "SUB TOTAL DIRECT COST", kind: "subtotal", get: (b) => ({ ank: subTotalDirect(b.ANK), bag: subTotalDirect(b.BAG) }) },
+        { label: "TOTAL COMMON EXPENSES", kind: "category", get: (b) => ({ ank: b.ANK.common, bag: b.BAG.common }) },
+        { label: "TOTAL GENERAL EXPENSES", kind: "category", get: (b) => ({ ank: b.ANK.general, bag: b.BAG.general }) },
+        { label: "TOTAL COST", kind: "total", get: (b) => ({ ank: totalCost(b.ANK), bag: totalCost(b.BAG) }) },
+        {
+            label: "(COMMON EXPENSES) / TOTAL COST",
+            kind: "ratio",
+            get: (b) => ({
+                ank: fmtPct(b.ANK.common, totalCost(b.ANK)),
+                bag: fmtPct(b.BAG.common, totalCost(b.BAG)),
+            }),
+        },
+        {
+            label: "(GENERAL EXPENSES) / TOTAL COST",
+            kind: "ratio",
+            get: (b) => ({
+                ank: fmtPct(b.ANK.general, totalCost(b.ANK)),
+                bag: fmtPct(b.BAG.general, totalCost(b.BAG)),
+            }),
+        },
+    ];
+
+    const rowBgFor = (kind: RowKind, isSticky: boolean) => {
+        if (kind === "subtotal") return isSticky ? "bg-zinc-100 dark:bg-zinc-800" : "bg-zinc-50 dark:bg-zinc-900/40";
+        if (kind === "total") return isSticky ? "bg-emerald-100 dark:bg-emerald-950" : "bg-emerald-50 dark:bg-emerald-950/40";
+        if (kind === "ratio") return isSticky ? "bg-zinc-50 dark:bg-zinc-900/30" : "bg-white dark:bg-zinc-900";
+        return isSticky ? "bg-white dark:bg-zinc-900" : "bg-white dark:bg-zinc-900";
+    };
+
+    const rowFontFor = (kind: RowKind) => {
+        if (kind === "subtotal") return "font-semibold text-zinc-700 dark:text-zinc-200";
+        if (kind === "total") return "font-bold text-emerald-700 dark:text-emerald-300";
+        if (kind === "ratio") return "italic text-zinc-600 dark:text-zinc-400";
+        return "text-zinc-700 dark:text-zinc-300";
+    };
+
+    const labelText = (kind: RowKind) => {
+        if (kind === "subtotal") return "font-semibold text-zinc-700 dark:text-zinc-200";
+        if (kind === "total") return "font-bold text-emerald-700 dark:text-emerald-300";
+        if (kind === "ratio") return "italic text-zinc-600 dark:text-zinc-400";
+        return "text-zinc-700 dark:text-zinc-300";
+    };
+
+    const formatCell = (v: number | string) => {
+        if (typeof v === "string") return v;
+        return fmt(v);
+    };
+
+    const cellBorder = "border-r border-zinc-200 dark:border-zinc-800";
+    const cellGroupBorder = "border-r border-zinc-300 dark:border-zinc-700";
+    const headerBorder = "border-r border-b border-zinc-300 dark:border-zinc-700";
+
+    return (
+        <section className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60 flex flex-wrap items-center gap-3 justify-between">
+                <div>
+                    <h2 className="text-base font-semibold">Project Cost Breakdown by Year</h2>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        {projectDesc} <span className="text-zinc-400">({projectCode})</span> — direct costs, indirect costs, and ratios
+                    </p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Project</span>
+                        <Select value={projectCode} onValueChange={onProjectChange}>
+                            <SelectTrigger className="w-[260px] h-8 text-xs">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {projectOptions.map((code) => (
+                                    <SelectItem key={code} value={code}>
+                                        {PROJECT_META[code]?.desc || code} <span className="text-zinc-400 text-[10px] ml-1">({code})</span>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">Year</span>
+                        <div className="w-[180px]">
+                            <CompactMultiSelect
+                                options={yearOptions.map((y) => ({ label: String(y), value: String(y) }))}
+                                selected={selectedYears.map((y) => String(y))}
+                                onChange={(vals) => onYearsChange(vals.map(Number))}
+                                placeholder="ALL Years"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="overflow-auto">
+                <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
+                    <thead>
+                        <tr>
+                            <th rowSpan={2} className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[260px] min-w-[260px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">
+                                SUMMARY OF TOTALS
+                            </th>
+                            {groups.map((g) => (
+                                <th
+                                    key={g.label}
+                                    colSpan={2}
+                                    className={`text-center px-2 h-[28px] font-medium tracking-wide bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 ${
+                                        g.label === "TOTAL"
+                                            ? "text-zinc-800 dark:text-zinc-100"
+                                            : "text-zinc-700 dark:text-zinc-200"
+                                    } ${headerBorder}`}
+                                >
+                                    {g.label}
+                                </th>
+                            ))}
+                        </tr>
+                        <tr className="text-[10px]">
+                            {groups.map((g) => (
+                                <Fragment key={g.label}>
+                                    <th className={`text-right px-1.5 h-[24px] font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900 ${cellBorder} border-b border-zinc-300 dark:border-zinc-700`}>
+                                        HEAD OFFICE
+                                    </th>
+                                    <th className={`text-right px-1.5 h-[24px] font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900 ${cellGroupBorder} border-b border-zinc-300 dark:border-zinc-700`}>
+                                        BAGHDAD SITE
+                                    </th>
+                                </Fragment>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {bodyRows.map((row, idx) => {
+                            const labelClass = labelText(row.kind);
+                            const fontClass = rowFontFor(row.kind);
+                            const labelBg = rowBgFor(row.kind, true);
+                            const cellBg = rowBgFor(row.kind, false);
+                            const topBorder =
+                                row.kind === "subtotal" || row.kind === "total"
+                                    ? "border-t border-zinc-300 dark:border-zinc-700"
+                                    : "";
+                            return (
+                                <tr key={idx}>
+                                    <td className={`px-2 h-[24px] sticky left-0 z-10 ${labelBg} ${labelClass} border-r border-b border-zinc-200 dark:border-zinc-800 ${topBorder}`}>
+                                        {row.label}
+                                    </td>
+                                    {groups.map((g, gi) => {
+                                        const v = row.get!(g.block);
+                                        const isLastGroup = gi === groups.length - 1;
+                                        return (
+                                            <Fragment key={g.label}>
+                                                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${fontClass} border-b border-zinc-200 dark:border-zinc-800 ${topBorder} ${cellBorder}`}>
+                                                    {formatCell(v.ank)}
+                                                </td>
+                                                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${fontClass} border-b border-zinc-200 dark:border-zinc-800 ${topBorder} ${isLastGroup ? "" : cellGroupBorder}`}>
+                                                    {formatCell(v.bag)}
+                                                </td>
+                                            </Fragment>
+                                        );
+                                    })}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     );
 }
