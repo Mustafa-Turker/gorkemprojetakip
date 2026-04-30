@@ -388,11 +388,20 @@ export default function TablesPage() {
     const receivedList = useMemo(() => {
         if (!data || !data.receivedItems) return null;
         const allProjects = selectedProject2 === "__ALL__";
-        const items = data.receivedItems.filter((r) => {
-            if (!allProjects && r.project !== selectedProject2) return false;
-            if (yearAllowed2 && !yearAllowed2.has(r.yr)) return false;
-            return true;
-        });
+        const items = data.receivedItems
+            .filter((r) => {
+                if (!allProjects && r.project !== selectedProject2) return false;
+                if (yearAllowed2 && !yearAllowed2.has(r.yr)) return false;
+                return true;
+            })
+            .slice()
+            .sort((a, b) => {
+                // Reverse chronological — latest first.
+                const da = a.date ? new Date(a.date).getTime() : 0;
+                const db = b.date ? new Date(b.date).getTime() : 0;
+                if (db !== da) return db - da;
+                return b.id.localeCompare(a.id);
+            });
         const yearsSet = new Set<number>();
         items.forEach((r) => yearsSet.add(r.yr));
         const years = [...yearsSet].sort((a, b) => a - b);
@@ -1120,21 +1129,21 @@ function ReceivedItemsTable({
                 <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
                     <thead>
                         <tr>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[88px] min-w-[88px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Date</th>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[88px] top-0 z-50 w-[240px] min-w-[240px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Counter Party</th>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Type</th>
+                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[80px] min-w-[80px] max-w-[80px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Date</th>
+                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[80px] top-0 z-50 w-[180px] min-w-[180px] max-w-[180px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
+                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[80px] min-w-[80px] max-w-[80px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Counter Pt.</th>
+                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[68px] min-w-[68px] max-w-[68px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Type</th>
                             {isAll && (
-                                <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
+                                <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[60px] min-w-[60px] max-w-[60px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
                             )}
-                            <th className="text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Amount</th>
-                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Cur.</th>
-                            <th className="text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Rate</th>
-                            <th className="text-right px-2 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL (USD)</th>
+                            <th className="text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[96px] min-w-[96px] max-w-[96px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Amount</th>
+                            <th className="text-left px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[40px] min-w-[40px] max-w-[40px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Cur.</th>
+                            <th className="text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[64px] min-w-[64px] max-w-[64px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Rate</th>
+                            <th className="text-right px-1.5 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 w-[100px] min-w-[100px] max-w-[100px] bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL (USD)</th>
                             {years.map((y, idx) => (
                                 <th
                                     key={y}
-                                    className={`text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 ${idx === years.length - 1 ? "" : cellGroupBorder}`}
+                                    className={`text-right px-1.5 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 w-[100px] min-w-[100px] max-w-[100px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 ${idx === years.length - 1 ? "" : cellGroupBorder}`}
                                 >
                                     {y}
                                 </th>
@@ -1152,21 +1161,21 @@ function ReceivedItemsTable({
                             const amtColor = amt < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400";
                             return (
                                 <tr key={r.id}>
-                                    <td className={`px-2 h-[24px] sticky left-0 z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 whitespace-nowrap`}>{dateStr}</td>
-                                    <td className={`px-2 h-[24px] sticky left-[88px] z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate max-w-[240px]`} title={r.description || ""}>{r.description || "-"}</td>
-                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.counter_party || "-"}</td>
-                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.type}{r.is_exchange ? <span className="ml-1 text-[9px] text-amber-600">(FX)</span> : null}</td>
+                                    <td className={`px-1.5 h-[24px] sticky left-0 z-10 w-[80px] min-w-[80px] max-w-[80px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 whitespace-nowrap`}>{dateStr}</td>
+                                    <td className={`px-1.5 h-[24px] sticky left-[80px] z-10 w-[180px] min-w-[180px] max-w-[180px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate`} title={r.description || ""}>{r.description || "-"}</td>
+                                    <td className={`px-1.5 h-[24px] w-[80px] min-w-[80px] max-w-[80px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`} title={r.counter_party}>{r.counter_party || "-"}</td>
+                                    <td className={`px-1.5 h-[24px] w-[68px] min-w-[68px] max-w-[68px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`} title={r.type}>{r.type}{r.is_exchange ? <span className="ml-0.5 text-[9px] text-amber-600">FX</span> : null}</td>
                                     {isAll && (
-                                        <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.project}</td>
+                                        <td className={`px-1.5 h-[24px] w-[60px] min-w-[60px] max-w-[60px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} truncate`}>{r.project}</td>
                                     )}
-                                    <td className={`text-right px-2 h-[24px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-b ${cellBorder} whitespace-nowrap`}>{fmt(origAmt)}</td>
-                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.currency || "-"}</td>
-                                    <td className={`text-right px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} whitespace-nowrap`}>{rate ? rate.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "-"}</td>
-                                    <td className={`text-right px-2 h-[24px] ${rowBg} font-semibold ${amtColor} border-b ${cellBorder}`}>{fmt(amt)}</td>
+                                    <td className={`text-right px-1.5 h-[24px] w-[96px] min-w-[96px] max-w-[96px] ${rowBg} text-zinc-700 dark:text-zinc-300 border-b ${cellBorder} whitespace-nowrap`}>{fmt(origAmt)}</td>
+                                    <td className={`px-1.5 h-[24px] w-[40px] min-w-[40px] max-w-[40px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.currency || "-"}</td>
+                                    <td className={`text-right px-1.5 h-[24px] w-[64px] min-w-[64px] max-w-[64px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder} whitespace-nowrap`}>{rate ? rate.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "-"}</td>
+                                    <td className={`text-right px-1.5 h-[24px] w-[100px] min-w-[100px] max-w-[100px] ${rowBg} font-semibold ${amtColor} border-b ${cellBorder}`}>{fmt(amt)}</td>
                                     {years.map((y, yi) => (
                                         <td
                                             key={y}
-                                            className={`text-right px-2 h-[24px] ${rowBg} border-b border-zinc-200 dark:border-zinc-800 ${yi === years.length - 1 ? "" : cellGroupBorder} ${y === r.yr ? amtColor : "text-zinc-300 dark:text-zinc-700"}`}
+                                            className={`text-right px-1.5 h-[24px] w-[100px] min-w-[100px] max-w-[100px] ${rowBg} border-b border-zinc-200 dark:border-zinc-800 ${yi === years.length - 1 ? "" : cellGroupBorder} ${y === r.yr ? amtColor : "text-zinc-300 dark:text-zinc-700"}`}
                                         >
                                             {y === r.yr ? fmt(amt) : "·"}
                                         </td>
@@ -1185,12 +1194,12 @@ function ReceivedItemsTable({
                     {items.length > 0 && (
                         <tfoot>
                             <tr className="font-bold text-emerald-700 dark:text-emerald-300">
-                                <td colSpan={fixedCols + 2} className="px-2 h-[26px] sticky left-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
-                                <td className="text-right px-2 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">{fmt(total)}</td>
+                                <td colSpan={fixedCols + 2} className="px-1.5 h-[26px] sticky left-0 bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
+                                <td className="text-right px-1.5 h-[26px] w-[100px] min-w-[100px] max-w-[100px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">{fmt(total)}</td>
                                 {years.map((y, yi) => (
                                     <td
                                         key={y}
-                                        className={`text-right px-2 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-t border-zinc-300 dark:border-zinc-700 ${yi === years.length - 1 ? "" : cellGroupBorder}`}
+                                        className={`text-right px-1.5 h-[26px] w-[100px] min-w-[100px] max-w-[100px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-t border-zinc-300 dark:border-zinc-700 ${yi === years.length - 1 ? "" : cellGroupBorder}`}
                                     >
                                         {fmt(totalsByYear[y] || 0)}
                                     </td>
