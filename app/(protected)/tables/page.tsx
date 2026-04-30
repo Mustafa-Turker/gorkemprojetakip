@@ -273,8 +273,8 @@ export default function TablesPage() {
                             <table className="w-full text-[11px] tabular-nums border-collapse leading-tight">
                                 <thead>
                                     <tr className="bg-zinc-50 dark:bg-zinc-900/60 border-b border-zinc-200 dark:border-zinc-800">
-                                        <th rowSpan={2} className="text-left px-2 py-1 font-semibold text-zinc-600 dark:text-zinc-300 sticky left-0 bg-zinc-50 dark:bg-zinc-900/60 z-10">Project</th>
-                                        <th rowSpan={2} className="text-left px-1.5 py-1 font-semibold text-zinc-600 dark:text-zinc-300">Src</th>
+                                        <th rowSpan={2} className="text-left px-2 py-1 font-semibold text-zinc-600 dark:text-zinc-300 sticky left-0 bg-zinc-50 dark:bg-zinc-900/60 z-30 w-[140px] min-w-[140px] max-w-[140px] border-r border-zinc-200 dark:border-zinc-800">Project</th>
+                                        <th rowSpan={2} className="text-left px-1.5 py-1 font-semibold text-zinc-600 dark:text-zinc-300 sticky left-[140px] bg-zinc-50 dark:bg-zinc-900/60 z-30 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800">Src</th>
                                         <th colSpan={6} className="text-center px-2 py-1 font-semibold text-zinc-600 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-800 bg-indigo-50/50 dark:bg-indigo-950/20">COST DETAILS</th>
                                         <th rowSpan={2} className="text-right px-1.5 py-1 font-semibold text-zinc-600 dark:text-zinc-300 border-l border-zinc-200 dark:border-zinc-800">Total Cost</th>
                                         <th rowSpan={2} className="text-right px-1.5 py-1 font-semibold text-zinc-600 dark:text-zinc-300">Total Spent</th>
@@ -305,8 +305,8 @@ export default function TablesPage() {
                                 {tableRows.length > 0 && (
                                     <tfoot>
                                         <tr className="bg-zinc-100 dark:bg-zinc-900 border-t-2 border-zinc-300 dark:border-zinc-700 font-semibold">
-                                            <td rowSpan={2} className="px-2 py-1 align-middle sticky left-0 bg-zinc-100 dark:bg-zinc-900">GRAND TOTAL</td>
-                                            <td className="px-1.5 py-1">ANK</td>
+                                            <td rowSpan={2} className="px-2 py-1 align-middle sticky left-0 z-20 bg-zinc-100 dark:bg-zinc-900 w-[140px] min-w-[140px] max-w-[140px] border-r border-zinc-200 dark:border-zinc-800">GRAND TOTAL</td>
+                                            <td className="px-1.5 py-1 sticky left-[140px] z-20 bg-zinc-100 dark:bg-zinc-900 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800">ANK</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.ANK.material)}</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.ANK.labour)}</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.ANK.subcontractor)}</td>
@@ -320,7 +320,7 @@ export default function TablesPage() {
                                             <td rowSpan={2} className={`text-right px-1.5 py-1 align-middle font-bold bg-violet-50/40 dark:bg-violet-950/20 ${grand.balanceVsSpent < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(grand.balanceVsSpent)}</td>
                                         </tr>
                                         <tr className="bg-zinc-100 dark:bg-zinc-900 font-semibold">
-                                            <td className="px-1.5 py-1">BAG</td>
+                                            <td className="px-1.5 py-1 sticky left-[140px] z-20 bg-zinc-100 dark:bg-zinc-900 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800">BAG</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.BAG.material)}</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.BAG.labour)}</td>
                                             <td className="text-right px-1.5 py-1">{fmt(grand.BAG.subcontractor)}</td>
@@ -344,15 +344,19 @@ export default function TablesPage() {
 function ProjectRows({ row }: { row: ProjectRow }) {
     const renderRow = (src: Source, isFirst: boolean) => {
         const t = row.bySource[src];
+        // Sticky cells need an explicit solid bg so scrolling content doesn't bleed through.
+        const rowBg = isFirst
+            ? "bg-white dark:bg-zinc-900"
+            : "bg-zinc-50/60 dark:bg-zinc-900/40";
         return (
-            <tr className={`border-b border-zinc-100 dark:border-zinc-800/60 ${isFirst ? "" : "bg-zinc-50/40 dark:bg-zinc-900/20"} hover:bg-zinc-50 dark:hover:bg-zinc-900/40`}>
+            <tr className={`border-b border-zinc-100 dark:border-zinc-800/60 ${rowBg}`}>
                 {isFirst ? (
-                    <td rowSpan={2} className="px-2 py-1 align-middle font-medium text-zinc-800 dark:text-zinc-200 sticky left-0 bg-white dark:bg-zinc-900 border-r border-zinc-100 dark:border-zinc-800/60">
-                        <div className="leading-tight">{row.desc}</div>
+                    <td rowSpan={2} className="px-2 py-1 align-middle font-medium text-zinc-800 dark:text-zinc-200 sticky left-0 z-20 w-[140px] min-w-[140px] max-w-[140px] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
+                        <div className="leading-tight truncate">{row.desc}</div>
                         <div className="text-[10px] text-zinc-500 font-normal leading-tight">{row.project}</div>
                     </td>
                 ) : null}
-                <td className="px-1.5 py-1 text-zinc-600 dark:text-zinc-400 font-medium">{src}</td>
+                <td className={`px-1.5 py-1 text-zinc-600 dark:text-zinc-400 font-medium sticky left-[140px] z-20 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800 ${rowBg}`}>{src}</td>
                 <td className="text-right px-1.5 py-1">{fmt(t.material)}</td>
                 <td className="text-right px-1.5 py-1">{fmt(t.labour)}</td>
                 <td className="text-right px-1.5 py-1">{fmt(t.subcontractor)}</td>
