@@ -65,11 +65,32 @@ export async function GET() {
             GROUP BY yr, project, source, l1, l2
         `;
 
-        const [cost, spent, received, costDetail] = await Promise.all([
+        // Individual cash_flow rows for the chronological received-items table.
+        // Internal ANK<->BAG transfers are excluded (neutral, project-irrelevant).
+        const receivedItemsSql = `
+            SELECT
+                id::text AS id,
+                date,
+                description,
+                COALESCE(counter_party, '') AS counter_party,
+                type,
+                category,
+                is_exchange,
+                COALESCE(NULLIF(project, ''), '(empty)') AS project,
+                usd_equal::float8 AS amount,
+                EXTRACT(YEAR FROM date)::int AS yr
+            FROM public.cash_flow
+            WHERE date IS NOT NULL
+              AND COALESCE(counter_party, '') NOT IN ('ANK', 'BAG')
+            ORDER BY date ASC, id ASC
+        `;
+
+        const [cost, spent, received, costDetail, receivedItems] = await Promise.all([
             query(costSql),
             query(spentSql),
             query(receivedSql),
             query(costDetailSql),
+            query(receivedItemsSql),
         ]);
 
         return NextResponse.json({
@@ -77,6 +98,7 @@ export async function GET() {
             spent: spent.rows,
             received: received.rows,
             costDetail: costDetail.rows,
+            receivedItems: receivedItems.rows,
         });
     } catch (error) {
         console.error("tables/summary GET error:", error);

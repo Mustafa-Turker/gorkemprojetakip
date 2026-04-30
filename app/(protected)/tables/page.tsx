@@ -71,11 +71,25 @@ interface CostDetailRow {
     amount: number;
 }
 
+interface ReceivedItemRow {
+    id: string;
+    date: string;
+    description: string | null;
+    counter_party: string;
+    type: string;
+    category: string | null;
+    is_exchange: boolean;
+    project: string;
+    amount: number;
+    yr: number;
+}
+
 interface ApiResponse {
     cost: CostRow[];
     spent: SpentRow[];
     received: ReceivedRow[];
     costDetail: CostDetailRow[];
+    receivedItems: ReceivedItemRow[];
 }
 
 function fmt(n: number): string {
@@ -359,6 +373,27 @@ export default function TablesPage() {
         return { sections: result, years };
     }, [data, selectedProject2, yearAllowed2]);
 
+    // Table 4 — chronological received-items list, sharing table 2's selectors
+    const receivedList = useMemo(() => {
+        if (!data || !data.receivedItems) return null;
+        const allProjects = selectedProject2 === "__ALL__";
+        const items = data.receivedItems.filter((r) => {
+            if (!allProjects && r.project !== selectedProject2) return false;
+            if (yearAllowed2 && !yearAllowed2.has(r.yr)) return false;
+            return true;
+        });
+        const yearsSet = new Set<number>();
+        items.forEach((r) => yearsSet.add(r.yr));
+        const years = [...yearsSet].sort((a, b) => a - b);
+        const total = items.reduce((s, r) => s + Number(r.amount || 0), 0);
+        const totalsByYear: Record<number, number> = {};
+        years.forEach((y) => (totalsByYear[y] = 0));
+        items.forEach((r) => {
+            totalsByYear[r.yr] = (totalsByYear[r.yr] || 0) + Number(r.amount || 0);
+        });
+        return { items, years, total, totalsByYear };
+    }, [data, selectedProject2, yearAllowed2]);
+
     // Grand totals row
     const grand = useMemo(() => {
         const acc = {
@@ -549,6 +584,18 @@ export default function TablesPage() {
                                 : PROJECT_META[selectedProject2]?.desc || selectedProject2
                         }
                         detail={projectCostDetail}
+                    />
+                )}
+
+                {!isLoading && !error && data && receivedList && (
+                    <ReceivedItemsTable
+                        projectCode={selectedProject2}
+                        projectDesc={
+                            selectedProject2 === "__ALL__"
+                                ? "All Projects Combined"
+                                : PROJECT_META[selectedProject2]?.desc || selectedProject2
+                        }
+                        list={receivedList}
                     />
                 )}
             </main>
@@ -1002,6 +1049,118 @@ function DetailedCostBreakdownTable({
                             </tr>
                         )}
                     </tbody>
+                </table>
+            </div>
+        </section>
+    );
+}
+
+interface ReceivedItemsTableProps {
+    projectCode: string;
+    projectDesc: string;
+    list: {
+        items: ReceivedItemRow[];
+        years: number[];
+        total: number;
+        totalsByYear: Record<number, number>;
+    };
+}
+
+function ReceivedItemsTable({
+    projectCode,
+    projectDesc,
+    list,
+}: ReceivedItemsTableProps) {
+    const { items, years, total, totalsByYear } = list;
+    const isAll = projectCode === "__ALL__";
+    const cellBorder = "border-r border-zinc-200 dark:border-zinc-800";
+    const cellGroupBorder = "border-r border-zinc-300 dark:border-zinc-700";
+
+    return (
+        <section className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-200/60 dark:border-zinc-800/60">
+                <h2 className="text-base font-semibold">Received Amounts (Chronological)</h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    {projectDesc}
+                    {!isAll && <span className="text-zinc-400"> ({projectCode})</span>}
+                    {" — every cash_flow entry by date (excludes internal ANK↔BAG transfers). Uses the project and year selectors above."}
+                </p>
+            </div>
+
+            <div className="overflow-auto max-h-[560px]">
+                <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
+                    <thead>
+                        <tr>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 z-50 w-[88px] min-w-[88px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Date</th>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky left-[88px] top-0 z-50 w-[260px] min-w-[260px] bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Description</th>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Counter Party</th>
+                            <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Type</th>
+                            {isAll && (
+                                <th className="text-left px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
+                            )}
+                            <th className="text-right px-2 h-[28px] font-medium text-emerald-700 dark:text-emerald-200 sticky top-0 z-40 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-r border-b border-zinc-300 dark:border-zinc-700">TOTAL</th>
+                            {years.map((y, idx) => (
+                                <th
+                                    key={y}
+                                    className={`text-right px-2 h-[28px] font-medium text-zinc-700 dark:text-zinc-200 sticky top-0 z-40 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-zinc-300 dark:border-zinc-700 ${idx === years.length - 1 ? "" : cellGroupBorder}`}
+                                >
+                                    {y}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((r, idx) => {
+                            const isAlt = idx % 2 === 1;
+                            const rowBg = isAlt ? "bg-zinc-50 dark:bg-zinc-900/40" : "bg-white dark:bg-zinc-900";
+                            const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
+                            const amt = Number(r.amount || 0);
+                            const amtColor = amt < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400";
+                            return (
+                                <tr key={r.id}>
+                                    <td className={`px-2 h-[24px] sticky left-0 z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 whitespace-nowrap`}>{dateStr}</td>
+                                    <td className={`px-2 h-[24px] sticky left-[88px] z-10 ${rowBg} text-zinc-700 dark:text-zinc-300 border-r border-b border-zinc-200 dark:border-zinc-800 truncate max-w-[260px]`} title={r.description || ""}>{r.description || "-"}</td>
+                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.counter_party || "-"}</td>
+                                    <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.type}{r.is_exchange ? <span className="ml-1 text-[9px] text-amber-600">(FX)</span> : null}</td>
+                                    {isAll && (
+                                        <td className={`px-2 h-[24px] ${rowBg} text-zinc-600 dark:text-zinc-400 border-b ${cellBorder}`}>{r.project}</td>
+                                    )}
+                                    <td className={`text-right px-2 h-[24px] ${rowBg} font-semibold ${amtColor} border-b ${cellBorder}`}>{fmt(amt)}</td>
+                                    {years.map((y, yi) => (
+                                        <td
+                                            key={y}
+                                            className={`text-right px-2 h-[24px] ${rowBg} border-b border-zinc-200 dark:border-zinc-800 ${yi === years.length - 1 ? "" : cellGroupBorder} ${y === r.yr ? amtColor : "text-zinc-300 dark:text-zinc-700"}`}
+                                        >
+                                            {y === r.yr ? fmt(amt) : "·"}
+                                        </td>
+                                    ))}
+                                </tr>
+                            );
+                        })}
+                        {items.length === 0 && (
+                            <tr>
+                                <td colSpan={5 + (isAll ? 1 : 0) + years.length} className="text-center py-12 text-zinc-500">
+                                    No received entries for the selected project / years
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                    {items.length > 0 && (
+                        <tfoot>
+                            <tr className="font-bold text-emerald-700 dark:text-emerald-300">
+                                <td colSpan={4 + (isAll ? 1 : 0)} className="px-2 h-[26px] sticky left-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">TOTAL</td>
+                                <td className="text-right px-2 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-r border-t border-zinc-300 dark:border-zinc-700">{fmt(total)}</td>
+                                {years.map((y, yi) => (
+                                    <td
+                                        key={y}
+                                        className={`text-right px-2 h-[26px] sticky bottom-0 z-30 bg-emerald-50 dark:bg-emerald-950 border-t border-zinc-300 dark:border-zinc-700 ${yi === years.length - 1 ? "" : cellGroupBorder}`}
+                                    >
+                                        {fmt(totalsByYear[y] || 0)}
+                                    </td>
+                                ))}
+                            </tr>
+                        </tfoot>
+                    )}
                 </table>
             </div>
         </section>
