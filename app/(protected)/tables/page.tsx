@@ -301,31 +301,31 @@ export default function TablesPage() {
                         </div>
 
                         <div className="overflow-auto max-h-[520px]">
-                            <table className="w-full text-[11px] tabular-nums border-collapse leading-tight">
+                            <table className="w-full text-[11px] tabular-nums leading-tight border-separate border-spacing-0">
                                 <thead>
-                                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                                        <th rowSpan={2} className="text-left px-2 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 sticky left-0 top-0 bg-zinc-200 dark:bg-zinc-800 z-40 w-[140px] min-w-[140px] max-w-[140px] border-r border-b border-zinc-300 dark:border-zinc-700">Project</th>
-                                        <th rowSpan={2} className="text-left px-1.5 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 sticky left-[140px] top-0 bg-zinc-200 dark:bg-zinc-800 z-40 w-[44px] min-w-[44px] max-w-[44px] border-r border-b border-zinc-300 dark:border-zinc-700">Src</th>
-                                        <th colSpan={6} className="text-center px-2 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 border-b border-zinc-300 dark:border-zinc-700 bg-indigo-200 dark:bg-indigo-900 sticky top-0 z-30">COST DETAILS</th>
-                                        <th rowSpan={2} className="text-right px-1.5 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 border-l border-b border-zinc-300 dark:border-zinc-700 bg-zinc-200 dark:bg-zinc-800 sticky top-0 z-30">Total Cost</th>
-                                        <th rowSpan={2} className="text-right px-1.5 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 border-b border-zinc-300 dark:border-zinc-700 bg-zinc-200 dark:bg-zinc-800 sticky top-0 z-30">Total Spent</th>
-                                        <th rowSpan={2} className="text-right px-1.5 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 border-l border-b border-zinc-300 dark:border-zinc-700 bg-emerald-200 dark:bg-emerald-900 sticky top-0 z-30">Total Received</th>
-                                        <th colSpan={2} className="text-center px-2 h-[26px] font-semibold text-zinc-700 dark:text-zinc-200 border-l border-b border-zinc-300 dark:border-zinc-700 bg-violet-200 dark:bg-violet-900 sticky top-0 z-30">BALANCE</th>
+                                    <tr>
+                                        <th rowSpan={2} className="text-left px-2 h-[28px] font-semibold text-white sticky left-0 top-0 z-50 w-[140px] min-w-[140px] max-w-[140px] bg-gradient-to-br from-zinc-700 to-zinc-900">Project</th>
+                                        <th rowSpan={2} className="text-center px-1.5 h-[28px] font-semibold text-white sticky left-[140px] top-0 z-50 w-[44px] min-w-[44px] max-w-[44px] bg-gradient-to-br from-zinc-700 to-zinc-900">Src</th>
+                                        <th colSpan={6} className="text-center px-2 h-[28px] font-semibold text-white tracking-wide bg-gradient-to-br from-indigo-500 to-indigo-700 sticky top-0 z-40">COST DETAILS</th>
+                                        <th rowSpan={2} className="text-right px-1.5 h-[28px] font-semibold text-white bg-gradient-to-br from-zinc-600 to-zinc-800 sticky top-0 z-40">Total Cost</th>
+                                        <th rowSpan={2} className="text-right px-1.5 h-[28px] font-semibold text-white bg-gradient-to-br from-zinc-600 to-zinc-800 sticky top-0 z-40">Total Spent</th>
+                                        <th rowSpan={2} className="text-right px-1.5 h-[28px] font-semibold text-white bg-gradient-to-br from-emerald-500 to-emerald-700 sticky top-0 z-40">Total Received</th>
+                                        <th colSpan={2} className="text-center px-2 h-[28px] font-semibold text-white tracking-wide bg-gradient-to-br from-violet-500 to-violet-700 sticky top-0 z-40">BALANCE</th>
                                     </tr>
-                                    <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[10px]">
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">Material</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">Labour</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">Subcontr.</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">Unclass.</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">Common</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-indigo-100 dark:bg-indigo-950 sticky top-[26px] z-30">General</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-violet-100 dark:bg-violet-950 sticky top-[26px] z-30">vs Cost</th>
-                                        <th className="text-right px-1.5 h-[24px] font-semibold text-zinc-700 dark:text-zinc-200 bg-violet-100 dark:bg-violet-950 sticky top-[26px] z-30">vs Spent</th>
+                                    <tr className="text-[10px]">
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">Material</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">Labour</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">Subcontr.</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">Unclass.</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">Common</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-indigo-900 dark:text-indigo-100 bg-gradient-to-b from-indigo-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-950 sticky top-[28px] z-40">General</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-violet-900 dark:text-violet-100 bg-gradient-to-b from-violet-100 to-violet-200 dark:from-violet-900 dark:to-violet-950 sticky top-[28px] z-40">vs Cost</th>
+                                        <th className="text-right px-1.5 h-[24px] font-semibold text-violet-900 dark:text-violet-100 bg-gradient-to-b from-violet-100 to-violet-200 dark:from-violet-900 dark:to-violet-950 sticky top-[28px] z-40">vs Spent</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {tableRows.map((row) => (
-                                        <ProjectRows key={row.project} row={row} />
+                                    {tableRows.map((row, idx) => (
+                                        <ProjectRows key={row.project} row={row} projIdx={idx} />
                                     ))}
                                     {tableRows.length === 0 && (
                                         <tr>
@@ -335,31 +335,31 @@ export default function TablesPage() {
                                 </tbody>
                                 {tableRows.length > 0 && (
                                     <tfoot>
-                                        <tr className="bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700 font-semibold">
-                                            <td rowSpan={2} className="px-2 align-middle sticky left-0 bottom-0 z-40 bg-zinc-200 dark:bg-zinc-800 w-[140px] min-w-[140px] max-w-[140px] border-r border-t-2 border-zinc-300 dark:border-zinc-700">GRAND TOTAL</td>
-                                            <td className="px-1.5 h-[24px] sticky left-[140px] bottom-[24px] z-40 bg-zinc-200 dark:bg-zinc-800 w-[44px] min-w-[44px] max-w-[44px] border-r border-t-2 border-zinc-300 dark:border-zinc-700">ANK</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.material)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.labour)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.subcontractor)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.unclassified)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.common)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.general)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-l border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.totalCost)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-30 bg-zinc-200 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-700">{fmt(grand.ANK.totalSpent)}</td>
-                                            <td rowSpan={2} className="text-right px-1.5 sticky bottom-0 z-30 bg-emerald-100 dark:bg-emerald-950 border-l border-t-2 border-zinc-300 dark:border-zinc-700 align-middle">{fmt(grand.received)}</td>
-                                            <td rowSpan={2} className={`text-right px-1.5 sticky bottom-0 z-30 bg-violet-100 dark:bg-violet-950 border-l border-t-2 border-zinc-300 dark:border-zinc-700 align-middle font-bold ${grand.balanceVsCost < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(grand.balanceVsCost)}</td>
-                                            <td rowSpan={2} className={`text-right px-1.5 sticky bottom-0 z-30 bg-violet-100 dark:bg-violet-950 border-t-2 border-zinc-300 dark:border-zinc-700 align-middle font-bold ${grand.balanceVsSpent < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(grand.balanceVsSpent)}</td>
+                                        <tr className="font-semibold text-white">
+                                            <td rowSpan={2} className="px-2 align-middle sticky left-0 bottom-0 z-50 w-[140px] min-w-[140px] max-w-[140px] bg-gradient-to-tr from-zinc-700 to-zinc-900">GRAND TOTAL</td>
+                                            <td className="px-1.5 h-[24px] text-center sticky left-[140px] bottom-[24px] z-50 w-[44px] min-w-[44px] max-w-[44px] bg-gradient-to-tr from-zinc-700 to-zinc-900">ANK</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.material)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.labour)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.subcontractor)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.unclassified)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.common)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.ANK.general)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-600 to-zinc-800">{fmt(grand.ANK.totalCost)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-[24px] z-40 bg-gradient-to-tr from-zinc-600 to-zinc-800">{fmt(grand.ANK.totalSpent)}</td>
+                                            <td rowSpan={2} className="text-right px-1.5 sticky bottom-0 z-40 bg-gradient-to-tr from-emerald-500 to-emerald-700 align-middle font-bold">{fmt(grand.received)}</td>
+                                            <td rowSpan={2} className={`text-right px-1.5 sticky bottom-0 z-40 align-middle font-bold ${grand.balanceVsCost < 0 ? "bg-gradient-to-tr from-rose-500 to-rose-700" : "bg-gradient-to-tr from-violet-500 to-violet-700"}`}>{fmt(grand.balanceVsCost)}</td>
+                                            <td rowSpan={2} className={`text-right px-1.5 sticky bottom-0 z-40 align-middle font-bold ${grand.balanceVsSpent < 0 ? "bg-gradient-to-tr from-rose-500 to-rose-700" : "bg-gradient-to-tr from-violet-500 to-violet-700"}`}>{fmt(grand.balanceVsSpent)}</td>
                                         </tr>
-                                        <tr className="bg-zinc-200 dark:bg-zinc-800 font-semibold">
-                                            <td className="px-1.5 h-[24px] sticky left-[140px] bottom-0 z-40 bg-zinc-200 dark:bg-zinc-800 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-300 dark:border-zinc-700">BAG</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.material)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.labour)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.subcontractor)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.unclassified)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.common)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.general)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800 border-l border-zinc-300 dark:border-zinc-700">{fmt(grand.BAG.totalCost)}</td>
-                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-30 bg-zinc-200 dark:bg-zinc-800">{fmt(grand.BAG.totalSpent)}</td>
+                                        <tr className="font-semibold text-white">
+                                            <td className="px-1.5 h-[24px] text-center sticky left-[140px] bottom-0 z-50 w-[44px] min-w-[44px] max-w-[44px] bg-gradient-to-tr from-zinc-700 to-zinc-900">BAG</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.material)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.labour)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.subcontractor)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.unclassified)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.common)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-700 to-zinc-900">{fmt(grand.BAG.general)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-600 to-zinc-800">{fmt(grand.BAG.totalCost)}</td>
+                                            <td className="text-right px-1.5 h-[24px] sticky bottom-0 z-40 bg-gradient-to-tr from-zinc-600 to-zinc-800">{fmt(grand.BAG.totalSpent)}</td>
                                         </tr>
                                     </tfoot>
                                 )}
@@ -372,35 +372,40 @@ export default function TablesPage() {
     );
 }
 
-function ProjectRows({ row }: { row: ProjectRow }) {
+function ProjectRows({ row, projIdx }: { row: ProjectRow; projIdx: number }) {
+    const isAlt = projIdx % 2 === 1;
+    // Each project occupies 2 body rows. Cells need explicit backgrounds because
+    // border-separate is in effect and sticky cells must cover scrolling content.
+    const cellBg = isAlt ? "bg-zinc-50 dark:bg-zinc-900/40" : "bg-white dark:bg-zinc-900";
+    const cellRecvBg = isAlt ? "bg-emerald-50 dark:bg-emerald-950/40" : "bg-emerald-50/60 dark:bg-emerald-950/30";
+    const cellBalBg = isAlt ? "bg-violet-50 dark:bg-violet-950/40" : "bg-violet-50/60 dark:bg-violet-950/30";
+    const borderB = "border-b border-zinc-200 dark:border-zinc-800";
+    const borderL = "border-l border-zinc-200 dark:border-zinc-800";
+
     const renderRow = (src: Source, isFirst: boolean) => {
         const t = row.bySource[src];
-        // Sticky cells need an explicit solid bg so scrolling content doesn't bleed through.
-        const rowBg = isFirst
-            ? "bg-white dark:bg-zinc-900"
-            : "bg-zinc-50/60 dark:bg-zinc-900/40";
         return (
-            <tr className={`border-b border-zinc-100 dark:border-zinc-800/60 ${rowBg}`}>
+            <tr>
                 {isFirst ? (
-                    <td rowSpan={2} className="px-2 py-1 align-middle font-medium text-zinc-800 dark:text-zinc-200 sticky left-0 z-20 w-[140px] min-w-[140px] max-w-[140px] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
+                    <td rowSpan={2} className={`px-2 align-middle font-semibold text-zinc-800 dark:text-zinc-100 sticky left-0 z-20 w-[140px] min-w-[140px] max-w-[140px] border-r border-zinc-200 dark:border-zinc-800 ${cellBg} ${borderB}`}>
                         <div className="leading-tight truncate">{row.desc}</div>
-                        <div className="text-[10px] text-zinc-500 font-normal leading-tight">{row.project}</div>
+                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-normal leading-tight">{row.project}</div>
                     </td>
                 ) : null}
-                <td className={`px-1.5 py-1 text-zinc-600 dark:text-zinc-400 font-medium sticky left-[140px] z-20 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800 ${rowBg}`}>{src}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.material)}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.labour)}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.subcontractor)}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.unclassified)}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.common)}</td>
-                <td className="text-right px-1.5 py-1">{fmt(t.general)}</td>
-                <td className="text-right px-1.5 py-1 border-l border-zinc-200 dark:border-zinc-800 font-semibold">{fmt(t.totalCost)}</td>
-                <td className="text-right px-1.5 py-1 font-semibold">{fmt(t.totalSpent)}</td>
+                <td className={`px-1.5 h-[24px] text-center text-zinc-600 dark:text-zinc-400 font-medium sticky left-[140px] z-20 w-[44px] min-w-[44px] max-w-[44px] border-r border-zinc-200 dark:border-zinc-800 ${cellBg} ${isFirst ? "" : borderB}`}>{src}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.material)}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.labour)}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.subcontractor)}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.unclassified)}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.common)}</td>
+                <td className={`text-right px-1.5 h-[24px] ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.general)}</td>
+                <td className={`text-right px-1.5 h-[24px] font-semibold ${borderL} ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.totalCost)}</td>
+                <td className={`text-right px-1.5 h-[24px] font-semibold ${cellBg} ${isFirst ? "" : borderB}`}>{fmt(t.totalSpent)}</td>
                 {isFirst ? (
                     <>
-                        <td rowSpan={2} className="text-right px-1.5 py-1 border-l border-zinc-200 dark:border-zinc-800 align-middle font-semibold bg-emerald-50/40 dark:bg-emerald-950/20">{fmt(row.received)}</td>
-                        <td rowSpan={2} className={`text-right px-1.5 py-1 border-l border-zinc-200 dark:border-zinc-800 align-middle font-semibold bg-violet-50/40 dark:bg-violet-950/20 ${row.balanceVsCost < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(row.balanceVsCost)}</td>
-                        <td rowSpan={2} className={`text-right px-1.5 py-1 align-middle font-semibold bg-violet-50/40 dark:bg-violet-950/20 ${row.balanceVsSpent < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(row.balanceVsSpent)}</td>
+                        <td rowSpan={2} className={`text-right px-1.5 align-middle font-bold ${borderL} ${cellRecvBg} ${borderB}`}>{fmt(row.received)}</td>
+                        <td rowSpan={2} className={`text-right px-1.5 align-middle font-bold ${borderL} ${cellBalBg} ${borderB} ${row.balanceVsCost < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(row.balanceVsCost)}</td>
+                        <td rowSpan={2} className={`text-right px-1.5 align-middle font-bold ${borderL} ${cellBalBg} ${borderB} ${row.balanceVsSpent < 0 ? "text-rose-600" : "text-emerald-700 dark:text-emerald-400"}`}>{fmt(row.balanceVsSpent)}</td>
                     </>
                 ) : null}
             </tr>
