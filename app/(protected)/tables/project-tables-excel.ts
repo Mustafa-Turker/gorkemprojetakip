@@ -6,7 +6,7 @@
 // Loaded dynamically from the page so the exceljs bundle isn't included in
 // the initial chunk.
 
-import type { Workbook, Borders, Fill } from "exceljs";
+import type { Workbook, Worksheet, Borders, Fill } from "exceljs";
 
 const NUM_FMT = "#,##0;[Red]-#,##0;-";
 const PCT_FMT = "0.0%;[Red]-0.0%;-";
@@ -93,12 +93,49 @@ const SECTION_TOTAL_LABEL: Record<string, string> = {
 const sub = (b: CatTotals) => b.material + b.labour + b.subcontractor + b.unclassified;
 const tot = (b: CatTotals) => sub(b) + b.common + b.general;
 
+// ---------- Page setup (A4 portrait, narrow margins, header + footer) ----------
+
+function applyPageSetup(ws: Worksheet, args: ExportArgs, sheetTitle: string, exportedAt: string) {
+    ws.pageSetup = {
+        paperSize: 9, // A4
+        orientation: "portrait",
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        horizontalCentered: true,
+        margins: {
+            // Excel "Narrow" preset (inches)
+            left: 0.25,
+            right: 0.25,
+            top: 0.75,
+            bottom: 0.75,
+            header: 0.3,
+            footer: 0.3,
+        },
+    };
+
+    const projectLabel =
+        args.projectDesc + (args.projectCode !== "__ALL__" ? ` (${args.projectCode})` : "");
+
+    // Excel header/footer codes:
+    //   &L / &C / &R = left / center / right
+    //   &B = bold, &"-,Bold" = bold font, &P = page #, &N = total #
+    //   &F = filename, &A = sheet name
+    ws.headerFooter = {
+        differentFirst: false,
+        differentOddEven: false,
+        oddHeader: `&L&B${sheetTitle}&C${projectLabel}&RYears: ${args.yearLabel}`,
+        oddFooter: `&L&F  ·  &A&CPage &P of &N&RExported: ${exportedAt}`,
+    };
+
+    ws.properties = { ...ws.properties, defaultRowHeight: 18 };
+}
+
 // ---------- Sheet 1: Cost by Year ----------
 
-function buildCostByYearSheet(wb: Workbook, args: ExportArgs) {
-    const ws = wb.addWorksheet("Cost by Year", {
-        views: [{ state: "frozen", xSplit: 1, ySplit: 4 }],
-    });
+function buildCostByYearSheet(wb: Workbook, args: ExportArgs, exportedAt: string) {
+    const ws = wb.addWorksheet("Cost by Year");
+    applyPageSetup(ws, args, "Cost by Year", exportedAt);
     const { breakdown, years } = args;
     const groups = [{ label: "TOTAL", block: breakdown.total }, ...years.map((y) => ({ label: String(y), block: breakdown.yearMap[y] }))];
 
@@ -205,10 +242,9 @@ function buildCostByYearSheet(wb: Workbook, args: ExportArgs) {
 
 // ---------- Sheet 2: Cost Detail ----------
 
-function buildCostDetailSheet(wb: Workbook, args: ExportArgs) {
-    const ws = wb.addWorksheet("Cost Detail", {
-        views: [{ state: "frozen", xSplit: 1, ySplit: 4 }],
-    });
+function buildCostDetailSheet(wb: Workbook, args: ExportArgs, exportedAt: string) {
+    const ws = wb.addWorksheet("Cost Detail");
+    applyPageSetup(ws, args, "Cost Detail", exportedAt);
     const { detail, years } = args;
     const groups = [{ label: "TOTAL", isTotal: true }, ...years.map((y) => ({ label: String(y), isTotal: false, year: y }))] as Array<{ label: string; isTotal: boolean; year?: number }>;
 
@@ -320,10 +356,9 @@ function buildCostDetailSheet(wb: Workbook, args: ExportArgs) {
 
 // ---------- Sheet 3: Received Amounts ----------
 
-function buildReceivedAmountsSheet(wb: Workbook, args: ExportArgs) {
-    const ws = wb.addWorksheet("Received Amounts", {
-        views: [{ state: "frozen", xSplit: 9, ySplit: 4 }],
-    });
+function buildReceivedAmountsSheet(wb: Workbook, args: ExportArgs, exportedAt: string) {
+    const ws = wb.addWorksheet("Received Amounts");
+    applyPageSetup(ws, args, "Received Amounts", exportedAt);
     const { received, years, projectCode } = args;
     const isAll = projectCode === "__ALL__";
 
@@ -444,9 +479,18 @@ export async function downloadProjectTablesExcel(args: ExportArgs) {
     wb.creator = "Gorkem Dashboard";
     wb.created = new Date();
 
-    buildCostByYearSheet(wb, args);
-    buildCostDetailSheet(wb, args);
-    buildReceivedAmountsSheet(wb, args);
+    const now = new Date();
+    const exportedAt = now.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+
+    buildCostByYearSheet(wb, args, exportedAt);
+    buildCostDetailSheet(wb, args, exportedAt);
+    buildReceivedAmountsSheet(wb, args, exportedAt);
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], {
@@ -456,7 +500,8 @@ export async function downloadProjectTablesExcel(args: ExportArgs) {
     const a = document.createElement("a");
     a.href = url;
     const safeProject = args.projectCode === "__ALL__" ? "AllProjects" : args.projectCode;
-    a.download = `ProjectTables_${safeProject}_${args.yearLabel.replace(/[\s,]+/g, "_")}.xlsx`;
+    const stamp = now.toISOString().slice(0, 10);
+    a.download = `ProjectTables_${safeProject}_${args.yearLabel.replace(/[\s,]+/g, "_")}_${stamp}.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();
