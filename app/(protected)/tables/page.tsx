@@ -220,9 +220,10 @@ export default function TablesPage() {
         });
     }, [data, yearAllowed]);
 
-    // Table 2 — per-(year, source) cost breakdown for the selected project
+    // Table 2 — per-(year, source) cost breakdown for the selected project (or ALL)
     const projectBreakdown = useMemo(() => {
         if (!data) return null;
+        const allProjects = selectedProject2 === "__ALL__";
         type CatTotals = {
             material: number;
             labour: number;
@@ -248,7 +249,7 @@ export default function TablesPage() {
         };
 
         data.cost.forEach((r) => {
-            if (r.project !== selectedProject2) return;
+            if (!allProjects && r.project !== selectedProject2) return;
             if (yearAllowed2 && !yearAllowed2.has(r.yr)) return;
             if (r.source !== "ANK" && r.source !== "BAG") return;
             const t = ensure(r.yr, r.source as Source);
@@ -455,7 +456,11 @@ export default function TablesPage() {
                 {!isLoading && !error && data && projectBreakdown && (
                     <ProjectCostBreakdownTable
                         projectCode={selectedProject2}
-                        projectDesc={PROJECT_META[selectedProject2]?.desc || selectedProject2}
+                        projectDesc={
+                            selectedProject2 === "__ALL__"
+                                ? "All Projects Combined"
+                                : PROJECT_META[selectedProject2]?.desc || selectedProject2
+                        }
                         projectOptions={Object.keys(PROJECT_META)}
                         onProjectChange={setSelectedProject2}
                         yearOptions={allYears}
@@ -639,7 +644,9 @@ function ProjectCostBreakdownTable({
                 <div>
                     <h2 className="text-base font-semibold">Project Cost Breakdown by Year</h2>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                        {projectDesc} <span className="text-zinc-400">({projectCode})</span> — direct costs, indirect costs, and ratios
+                        {projectDesc}
+                        {projectCode !== "__ALL__" && <span className="text-zinc-400"> ({projectCode})</span>}
+                        {" — direct costs, indirect costs, and ratios"}
                     </p>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
@@ -650,6 +657,9 @@ function ProjectCostBreakdownTable({
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="__ALL__">
+                                    <span className="font-semibold">All Projects Combined</span>
+                                </SelectItem>
                                 {projectOptions.map((code) => (
                                     <SelectItem key={code} value={code}>
                                         {PROJECT_META[code]?.desc || code} <span className="text-zinc-400 text-[10px] ml-1">({code})</span>
