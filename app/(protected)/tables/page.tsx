@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { CompactMultiSelect } from "@/components/ui/compact-multi-select";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -116,6 +117,7 @@ export default function TablesPage() {
     // Empty selection = ALL years.
     const [selectedYears, setSelectedYears] = useState<number[]>([]);
     const isAllYears = selectedYears.length === 0;
+    const [downloading, setDownloading] = useState(false);
     const yearAllowed = useMemo(() => {
         if (isAllYears) return null;
         return new Set(selectedYears);
@@ -266,6 +268,35 @@ export default function TablesPage() {
                                         placeholder="ALL Years"
                                     />
                                 </div>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                        if (downloading || tableRows.length === 0) return;
+                                        setDownloading(true);
+                                        try {
+                                            const { downloadSummaryExcel } = await import("./summary-excel");
+                                            const yearLabel = isAllYears
+                                                ? "All Years"
+                                                : selectedYears.slice().sort().join(", ");
+                                            await downloadSummaryExcel({ rows: tableRows, grand, yearLabel });
+                                        } catch (e) {
+                                            console.error("Excel export failed:", e);
+                                            alert("Excel export failed");
+                                        } finally {
+                                            setDownloading(false);
+                                        }
+                                    }}
+                                    disabled={downloading || tableRows.length === 0}
+                                    className="gap-1.5"
+                                >
+                                    {downloading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                    )}
+                                    Excel
+                                </Button>
                             </div>
                         </div>
 
